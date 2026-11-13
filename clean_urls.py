@@ -1,5 +1,7 @@
 """Conservative URL normalization and per-run duplicate identification."""
 import re
+import base64
+import binascii
 
 from urllib.parse import parse_qs, unquote_plus, urljoin, urlsplit, urlunsplit
 
@@ -11,15 +13,33 @@ def normalize_url(original: str) -> str | None:
     if not original or any(ord(char) <= 32 or ord(char) == 127 for char in original):
         return None
     if not (original.lower().startswith(("http://", "https://"))
-            or original.startswith("//") or original.startswith("/url?")):
+            or original.startswith(("//", "/url?", "/l/?", "/ck/a?"))):
         return None
     try:
-        url = urljoin("https://www.google.com", original)
+        base = "https://www.google.com"
+        if original.startswith("/l/?"):
+            base = "https://duckduckgo.com"
+        elif original.startswith("/ck/a?"):
+            base = "https://www.bing.com"
+        url = urljoin(base, original)
         parts = urlsplit(url)
         if parts.hostname in {"google.com", "www.google.com"} and parts.path == "/url":
             values = parse_qs(parts.query)
             url = values.get("q", values.get("url", [""]))[0]
             parts = urlsplit(url)
+        elif parts.hostname in {"duckduckgo.com", "html.duckduckgo.com", "www.duckduckgo.com"} and parts.path == "/l/":
+            url = parse_qs(parts.query).get("uddg", [""])[0]
+            parts = urlsplit(url)
+        elif parts.hostname in {"bing.com", "www.bing.com"} and parts.path == "/ck/a":
+            value = parse_qs(parts.query).get("u", [""])[0]
+            if value.startswith("a1"):
+                encoded = value[2:]
+                url = base64.b64decode(encoded + "=" * (-len(encoded) % 4), altchars=b"-_", validate=True).decode("utf-8")
+            else:
+                url = value
+            parts = urlsplit(url)
+        if any(ord(char) <= 32 or ord(char) == 127 for char in url):
+            return None
         if parts.scheme.lower() not in {"http", "https"} or not parts.hostname:
             return None
         if parts.hostname in {"google.com", "www.google.com"} and parts.path in {"/search", "/preferences", "/sorry/"}:
@@ -39,7 +59,7 @@ def normalize_url(original: str) -> str | None:
                          if unquote_plus(part.split("=", 1)[0]).lower() not in TRACKING
                          and not unquote_plus(part.split("=", 1)[0]).lower().startswith("utm_"))
         return urlunsplit((parts.scheme.lower(), host, parts.path or "/", query, parts.fragment))
-    except (ValueError, UnicodeError):
+    except (ValueError, UnicodeError, binascii.Error):
         return None
 
 

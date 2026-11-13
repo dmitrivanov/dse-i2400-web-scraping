@@ -1,4 +1,4 @@
-"""Command-line Google HTML → extraction → cleaning → MySQL workflow."""
+"""Command-line search HTML → extraction → cleaning → MySQL workflow."""
 import argparse
 from pathlib import Path
 import re
@@ -7,6 +7,8 @@ import time
 from mysql.connector import Error
 
 import db
+import bing_search
+import duckduckgo_search
 from clean_urls import clean_results
 from config import get_scraper_config, get_search_fetcher
 from google_search import SearchError, fetch_direct_html, fetch_html
@@ -24,21 +26,31 @@ def validate_query(query: str) -> None:
         raise ValueError("Query must contain at least five meaningful words (see README counting rule)")
 
 
-def run_search(query: str, max_pages: int = 1, fetcher: str | None = None) -> dict:
+def run_search(query: str, max_pages: int = 1, fetcher: str | None = None, engine: str = "google") -> dict:
     """Commit the run before retrieval, then atomically store observations and counts."""
     validate_query(query)
     if not 1 <= max_pages <= 5:
         raise ValueError("max_pages must be from 1 to 5")
-    fetcher = get_search_fetcher() if fetcher is None else fetcher
+    if engine not in {"google", "bing", "duckduckgo"}:
+        raise ValueError("Engine must be google, bing, or duckduckgo")
+    if fetcher is None:
+        fetcher = get_search_fetcher() if engine == "google" else "direct"
+    if engine != "google" and fetcher != "direct":
+        raise ValueError("ScraperAPI is supported only for Google; select direct for other engines")
     if fetcher not in {"direct", "scraperapi"}:
         raise ValueError("Fetcher must be direct or scraperapi")
     if fetcher == "scraperapi":
         get_scraper_config()
     retrieve = fetch_direct_html if fetcher == "direct" else fetch_html
+    parse, next_page = parse_results, next_page_start
+    if engine == "bing":
+        retrieve, parse, next_page = bing_search.fetch_html, bing_search.parse_results, bing_search.next_page_start
+    elif engine == "duckduckgo":
+        retrieve, parse, next_page = duckduckgo_search.fetch_html, duckduckgo_search.parse_results, duckduckgo_search.next_page_start
     with db.get_connection() as connection:
         try:
             query_id = db.insert_search_query(connection, query)
-            run_id = db.insert_search_run(connection, query_id)
+            run_id = db.insert_search_run(connection, query_id, engine)
             connection.commit()
         except Exception:
             connection.rollback()
@@ -53,7 +65,7 @@ def run_search(query: str, max_pages: int = 1, fetcher: str | None = None) -> di
         for page in range(max_pages):
             html = retrieve(query, start=start)
             (directory / f"page_{page + 1}.html").write_text(html, encoding="utf-8")
-            rows = parse_results(html)
+            rows = parse(html)
             for row in rows:
                 row["result_rank"] += len(observations)
             observations.extend(rows)
@@ -61,7 +73,7 @@ def run_search(query: str, max_pages: int = 1, fetcher: str | None = None) -> di
             _, counts = clean_results(observations)
             if counts["final_count"] >= 50:
                 break
-            next_start = next_page_start(html, query, start)
+            next_start = next_page(html, query, start)
             if next_start is None:
                 break
             start = next_start
@@ -96,19 +108,20 @@ def run_search(query: str, max_pages: int = 1, fetcher: str | None = None) -> di
         except Exception:
             raise SearchError(f"Run {run_id}: storage failed and failure status could not be saved; inspect Workbench") from None
         raise SearchError(f"Run {run_id}: result storage failed and was rolled back") from None
-    return {"run_id": run_id, "fetcher": fetcher, "status": status, "pages": pages, **counts, "error": error}
+    return {"run_id": run_id, "engine": engine, "fetcher": fetcher, "status": status, "pages": pages, **counts, "error": error}
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run one small Google HTML search ETL")
+    parser = argparse.ArgumentParser(description="Run one small search HTML ETL")
     parser.add_argument("query")
     parser.add_argument("--max-pages", type=int, default=1, choices=range(1, 6),
                         help="default 1; up to 5 pages after confirming HTML extraction works")
     parser.add_argument("--fetcher", choices=["direct", "scraperapi"],
-                        help="overrides SEARCH_FETCHER; otherwise defaults to direct")
+                        help="Google: overrides SEARCH_FETCHER; Bing/DuckDuckGo: direct only")
+    parser.add_argument("--engine", choices=["google", "bing", "duckduckgo"], default="google")
     args = parser.parse_args()
     try:
-        summary = run_search(args.query, args.max_pages, args.fetcher)
+        summary = run_search(args.query, args.max_pages, args.fetcher, args.engine)
     except ValueError as error:
         # Configuration and query validators only return static, credential-free messages.
         print(str(error))
@@ -119,7 +132,7 @@ def main() -> int:
     except SearchError as error:
         print(error)
         return 1
-    print(f"Run {summary['run_id']}: {summary['status']}; fetcher={summary['fetcher']}; parsed pages={summary['pages']}; "
+    print(f"Run {summary['run_id']}: {summary['status']}; engine={summary['engine']}; fetcher={summary['fetcher']}; parsed pages={summary['pages']}; "
           f"raw={summary['raw_count']}, ads={summary['ad_count']}, "
           f"duplicates={summary['duplicate_count']}, final={summary['final_count']}")
     if summary["error"]:

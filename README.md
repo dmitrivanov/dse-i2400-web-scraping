@@ -1,9 +1,136 @@
 # MY_CUSTOM_BOT
 
-CCNY DSE I2400 Advanced Web Scraping project. Milestone 02B makes direct HTTP the default for the command-line
-Google HTML → extraction → URL cleaning → MySQL ETL workflow. The original assignment
+CCNY DSE I2400 Advanced Web Scraping project. Milestone 03 supports Google, Bing,
+and DuckDuckGo through one command-line HTML → extraction → URL cleaning → MySQL ETL workflow. The original assignment
 and `WebSearch_Google_Python_Script.py` are preserved. FastAPI still provides only
 `/`, `/health`, and `/db-health`; no search API or GUI is included.
+
+## Milestone 03: multiple search engines
+
+Milestone 02 was committed as an implementation milestone: `f0c3a23`
+(`Milestone 02: Search ETL implementation and Google diagnostics`). Its 80 tests
+passed; live Google retrieval remains limited by the observed JavaScript shell.
+Task 03 authorizes committing tested engine integration even when providers have
+live limitations. No commit is a claim of collecting 50 relevant research sources.
+
+```sh
+source .venv/bin/activate
+python run_search.py "childhood cancer early diagnosis methods" --engine bing
+python run_search.py "childhood cancer early diagnosis methods" --engine duckduckgo
+python run_search.py "childhood cancer early diagnosis methods" --engine google
+python run_search.py "childhood cancer early diagnosis methods" --engine google --fetcher scraperapi
+python run_search.py "childhood cancer early diagnosis methods" --engine bing --max-pages 5
+python -m pytest -q
+```
+
+`--engine` defaults to `google`, preserving previous commands. Google retains
+`--fetcher direct|scraperapi` and `SEARCH_FETCHER` configuration. Bing and DuckDuckGo
+always default to direct, independently of Google's configured fetcher. Explicit
+`--fetcher scraperapi` with another engine is rejected before any database writes.
+There is no automatic fallback between engines or fetchers.
+
+### New modules and shared workflow
+
+- `bing_search.py`: `fetch_html` retrieves one public Bing page; `parse_results`
+  extracts `#b_results li.b_algo` and `li.b_ad` cards using `h2 a[href]` and
+  `.b_caption p`; `next_page_start` accepts a same-query `a.sb_pagN` link's increasing
+  `first` offset. No navigation or general page links are extracted.
+- `duckduckgo_search.py`: retrieves the public non-JavaScript HTML interface;
+  `parse_results` extracts `.result a.result__a` and `.result__snippet`. `result--ad`
+  or `.result__badge--ad` marks ads; `web-result` or `results_links` is organic
+  evidence; unrecognized cards retain NULL classification. Its next-page function
+  accepts a same-query Next form on the HTML endpoint and preserves its hidden
+  fields and GET/POST method. This pagination is fixture-tested, not live-verified.
+- `run_search.py` chooses these small engine-specific functions, then uses the same
+  validation, cleaning, counters, artifacts, transactions and failure handling as
+  Google. `db.insert_search_run` now receives the selected engine as a parameter;
+  no table definitions were changed in Milestone 03.
+- `clean_urls.py` additionally decodes recognized Bing `/ck/a?u=a1...` base64 URL
+  wrappers and DuckDuckGo `/l/?uddg=...` wrappers locally. Unknown/invalid wrappers
+  remain invalid rather than triggering another request. Raw original URLs remain
+  stored. Deduplication is within each run; observations across engines are retained.
+- `tests/test_engines.py` tests parsing, encoded queries, blocked/network responses,
+  pagination, engine selection, database arguments, failure status, shared ETL and
+  cross-engine URL equivalence. Bing's fixture is sanitized from the live response;
+  DuckDuckGo's fixture is explicitly synthetic and is never inserted into MySQL.
+
+No new library was added. Direct requests use honest project identification, bounded
+10-second connect / 30-second operation timeouts, no retries, and report HTTP redirects
+without following them. CAPTCHA/challenge markup or missing result cards fails parsing.
+The bounded page limit remains five, with a two-second pause between pages. Pagination
+uses observed next links/forms only and increasing offsets no larger than 100. It stops
+at 50 final URLs, exhausted pagination, a block, or the page limit. To evaluate a combined
+collection, use the exact distinct-URL query below rather than adding per-engine counts.
+
+### Actual live verification
+
+Group B query: `childhood cancer early diagnosis methods`.
+
+| Engine | Live HTTP responses | MySQL run | Status | Raw | Ads | Duplicates | Final |
+| --- | --- | --- | --- | ---: | ---: | ---: | ---: |
+| Bing | 200, 200 | 1 | completed | 20 | 0 | 10 | 10 |
+| DuckDuckGo | 202 human-verification challenge | 2 | failed | 0 | 0 | 0 | 0 |
+| Google | Not requested in Task 03 | — | Previous JavaScript shell limitation remains | — | — | — | — |
+
+There were **three network requests total**: Bing's initial page, its next page, and
+one DuckDuckGo request. The initial captured Bing HTML was reused for the first ETL
+page without requesting it again. The next page returned the same ten URLs; no further
+valid next link was available. DuckDuckGo's observed failure was recorded without a
+second request. MySQL read-back confirmed run 1 has 20 stored observations and run 2
+has none, with each run joined to its original Group B query through foreign keys.
+Combined unique organic count for these two runs: **10**. The 50-URL target was **not
+achieved**. Several Bing results were broad childhood references (including dictionary
+and encyclopedia entries), despite the full query being present in the response's
+query field. Organic classification measures placement, not medical relevance; these
+are not claimed as 10 relevant early-diagnosis research sources.
+
+Local ignored evidence: `artifacts/bing_diagnostic.html`,
+`artifacts/duckduckgo_diagnostic.html`, `artifacts/run_1/page_1.html`,
+`artifacts/run_1/page_2.html`, and `artifacts/milestone03_verification.json`.
+Automated verification: **119 tests passed**, including all original 80 tests.
+One existing Starlette/httpx TestClient deprecation warning remains.
+
+### Workbench verification and cross-engine comparison
+
+```sql
+USE MY_CUSTOM_BOT;
+SELECT r.id, r.query_id, q.query_text, r.engine, r.status,
+       r.raw_count, r.ad_count, r.duplicate_count, r.final_count, r.error_message
+FROM search_runs r JOIN search_queries q ON q.id = r.query_id
+WHERE r.id IN (1, 2)
+ORDER BY r.id;
+
+SELECT r.engine, s.*
+FROM search_results s JOIN search_runs r ON r.id = s.run_id
+WHERE r.id IN (1, 2)
+ORDER BY s.run_id, s.result_rank;
+
+SELECT r.engine, s.title, s.original_url, s.normalized_url
+FROM search_results s JOIN search_runs r ON r.id = s.run_id
+WHERE r.id IN (1, 2) AND s.normalized_url IS NOT NULL
+  AND s.is_ad = FALSE AND s.is_duplicate = FALSE
+ORDER BY s.run_id, s.result_rank;
+
+-- Replace (1, 2) with the chosen cohort of runs for the SAME query.
+-- Binary comparison preserves URL path/query case unlike the default DB collation.
+SELECT COUNT(DISTINCT CAST(s.normalized_url AS BINARY)) AS combined_unique_urls
+FROM search_results s JOIN search_runs r ON r.id = s.run_id
+WHERE r.id IN (1, 2) AND s.normalized_url IS NOT NULL
+  AND s.is_ad = FALSE AND s.is_duplicate = FALSE;
+
+SELECT MIN(s.normalized_url) AS normalized_url,
+       GROUP_CONCAT(DISTINCT r.engine ORDER BY r.engine) AS engines,
+       COUNT(*) AS observations
+FROM search_results s JOIN search_runs r ON r.id = s.run_id
+WHERE r.id IN (1, 2) AND s.normalized_url IS NOT NULL AND s.is_ad = FALSE
+GROUP BY CAST(s.normalized_url AS BINARY);
+```
+
+For other runs, inspect query provenance before combining them. The example cohort
+contains the actual Task 03 Group B runs; the SQL does not alter or delete records.
+
+The prior setup and Google-specific diagnostic history follow below. Historical test
+counts and provider limitations describe those earlier tasks.
 
 ## Setup
 
@@ -249,8 +376,8 @@ The standard HTML request format follows
 [ScraperAPI's synchronous endpoint documentation](https://docs.scraperapi.com/synchronous-apis/using-the-api-endpoint).
 Pagination follows observed links, consistent with the provider's
 [pagination inspection guidance](https://www.scraperapi.com/blog/how-to-deal-with-pagination-in-python-step-by-step-guide-full-code/).
-No structured SERP entitlement is assumed. No retries, CAPTCHA bypass logic, alternate
-providers, frontend, AI integration, screenshots, or OCR are implemented.
+No structured SERP entitlement is assumed. No retries, CAPTCHA bypass logic,
+frontend, AI integration, screenshots, or OCR are implemented.
 
 Raw HTML artifacts are local and ignored by git. The exact API key is redacted before
 HTML leaves the provider module; request URLs, headers, and raw HTTP exceptions are

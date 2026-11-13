@@ -36,11 +36,11 @@ def insert_search_query(connection: MySQLConnection, query: str) -> int:
         return cursor.lastrowid
 
 
-def insert_search_run(connection: MySQLConnection, query_id: int) -> int:
-    """Start a Google run for an existing query."""
+def insert_search_run(connection: MySQLConnection, query_id: int, engine: str = "google") -> int:
+    """Start an engine-specific run for an existing query."""
     with connection.cursor() as cursor:
         cursor.execute("INSERT INTO search_runs (query_id, engine, status) VALUES (%s, %s, %s)",
-                       (query_id, "google", "running"))
+                       (query_id, engine, "running"))
         return cursor.lastrowid
 
 
