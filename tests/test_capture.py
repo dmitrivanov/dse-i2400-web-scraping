@@ -215,3 +215,15 @@ def test_optional_capture_is_after_etl_commit(monkeypatch, tmp_path, capture, se
         assert summary["capture"]["status"] == "skipped"
     if not capture:
         assert "capture" not in summary
+
+
+@pytest.mark.parametrize("query", ["childhood cancer early diagnosis methods", "b) Childhood cancer early diagnosis methods"])
+def test_capture_preserves_exact_query_including_assignment_prefix(browser, tmp_path, query):
+    from urllib.parse import parse_qs, urlsplit
+    page, instance = browser
+    page.url = "https://www.bing.com/search?" + urlencode({"q": query})
+    capture_search_page(query, tmp_path / "result.png")
+    actual_url = page.goto.call_args.args[0]
+    assert parse_qs(urlsplit(actual_url).query)["q"] == [query]
+    if query.startswith("b)"):
+        assert "b%29+Childhood" in actual_url

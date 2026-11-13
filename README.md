@@ -6,6 +6,19 @@ and DuckDuckGo through one command-line HTML → extraction → URL cleaning →
 and `WebSearch_Google_Python_Script.py` are preserved. FastAPI still provides only
 `/`, `/health`, and `/db-health`; no search API or GUI is included.
 
+## Task 04A: Bing query discrepancy
+
+A controlled two-request comparison preserved the complete queries end to end.
+`childhood cancer early diagnosis methods` returned general childhood references;
+`b) Childhood cancer early diagnosis methods` returned relevant PAHO, ICCP, Wiley
+and other cancer-diagnosis results under identical HTTP settings. The latter changes
+both prefix and capitalization, so their independent effects are not established.
+The saved browser screenshot agrees with saved HTTP results for the unprefixed query.
+No confirmed construction/parser bug was found, so retrieval behavior remains unchanged.
+See [BING_DIAGNOSIS.md](BING_DIAGNOSIS.md) for the comparison, sanitized URLs, pagination
+limits, and facts versus hypotheses. All 146 automated tests pass; diagnosis performed
+no new database writes and no additional browser navigation.
+
 ## Milestone 04: optional rendered screenshot and OCR
 
 ```sh
