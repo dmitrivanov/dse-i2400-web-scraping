@@ -69,3 +69,14 @@ def update_search_run(connection: MySQLConnection, run_id: int, status: str,
             (status, counts["raw_count"], counts["ad_count"], counts["duplicate_count"],
              counts["final_count"], error_message, run_id),
         )
+
+
+def insert_capture_artifact(connection: MySQLConnection, run_id: int,
+                            screenshot_path: str, ocr_text_path: str | None) -> int:
+    """Attach existing capture files to a run within the caller's transaction."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """INSERT INTO capture_artifacts (run_id, screenshot_path, ocr_text_path)
+            VALUES (%s, %s, %s)""", (run_id, screenshot_path, ocr_text_path),
+        )
+        return cursor.lastrowid

@@ -1,9 +1,116 @@
 # MY_CUSTOM_BOT
 
-CCNY DSE I2400 Advanced Web Scraping project. Milestone 03 supports Google, Bing,
+CCNY DSE I2400 Advanced Web Scraping project. Milestone 04 adds optional Bing screenshots
+and local OCR to the existing pipeline, which supports Google, Bing,
 and DuckDuckGo through one command-line HTML → extraction → URL cleaning → MySQL ETL workflow. The original assignment
 and `WebSearch_Google_Python_Script.py` are preserved. FastAPI still provides only
 `/`, `/health`, and `/db-health`; no search API or GUI is included.
+
+## Milestone 04: optional rendered screenshot and OCR
+
+```sh
+cd "/Users/dmitrii/Documents/CCNY 2026/Data Engineering/Web Scraping Project"
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+export PLAYWRIGHT_BROWSERS_PATH="$PWD/.venv/playwright-browsers"
+python -m playwright install chromium
+# Tesseract is a separate local executable. On macOS, if not installed:
+brew install tesseract
+tesseract --version
+python run_search.py "childhood cancer early diagnosis methods" --engine bing --capture
+python -m pytest -q
+```
+
+The Tesseract Homebrew installation was explicitly approved and completed for this
+workspace's live verification (version 5.5.4, English language data). Chromium was
+installed inside `.venv/playwright-browsers`, excluded by `.gitignore`. Set the export
+in each new terminal when using that local browser installation. Other operating
+systems need their own Tesseract installation on PATH; no auto-install occurs at runtime.
+
+Without `--capture`, behavior is unchanged: no browser launches and no OCR runs.
+Capture currently supports Bing only; selecting it with Google or DuckDuckGo fails
+validation before creating records. It captures the first page even when HTML ETL
+retrieves multiple pages. This is a second, independent browser navigation for the
+same query; the live page may differ from the HTTP HTML observation. OCR is evidence,
+not a replacement source for the existing parsed URL results.
+
+### Modules and failure handling
+
+- `capture_page.py`: `capture_search_page` launches Playwright Chromium, navigates
+  once, checks HTTP status/final query and visible Bing organic result cards, stops
+  on recognized challenges, and saves a full-page PNG. It closes the browser on
+  success and failure. It never clicks verification controls, retries, spoofs a
+  browser fingerprint, or changes the search retrieval code.
+- `ocr_capture.py`: `extract_screenshot_text` opens the screenshot through Pillow
+  (pytesseract's image dependency), invokes the local Tesseract English OCR engine
+  with a 60-second timeout, and saves its actual output as UTF-8. Empty output is
+  reported as a failure; no OCR content is fabricated.
+- `run_search.capture_run` orchestrates these optional steps only after successful
+  HTML ETL has committed valid organic results. It creates a fresh
+  `artifacts/run_<id>/capture_<uuid>/` directory with `search_results.png` and
+  `ocr.txt`. UUID directories and overwrite checks preserve existing captures.
+- `db.insert_capture_artifact` inserts paths with parameterized SQL into the existing
+  `capture_artifacts` table and links them by `run_id`. There is no new table or schema
+  migration. Files use absolute local paths, so moving the project requires updating
+  those metadata paths deliberately.
+
+Playwright is needed to render the page; pytesseract is a thin interface to a separately
+installed Tesseract executable; Pillow loads the PNG. Tests mock browser, OCR and
+MySQL boundaries to verify file creation, UTF-8 content, foreign-key arguments,
+transaction rollback, optional invocation, and failure isolation.
+
+Capture metadata has its own transaction. If OCR fails, the screenshot path is saved
+with `ocr_text_path=NULL` and a clear CLI error. If screenshot capture fails, no
+artifact metadata is inserted. If metadata storage fails, that transaction rolls back
+and local files are retained for inspection. Search-run status/counts and previously
+stored observations are not rolled back by a capture failure. The CLI exits nonzero
+for requested capture failure, partial OCR success, or skipped capture; its summary
+reports search and capture status separately. Capture is skipped when HTML ETL fails
+or returns no valid organic URLs. English OCR can misread icons, punctuation, URLs,
+and small text; no OCR accuracy percentage is inferred from a single screenshot.
+
+### Actual live verification
+
+Executed the exact Group B CLI command above with `--engine bing --capture`:
+
+- Search run **3**: completed; raw **10**, ads **0**, duplicates **0**, final **10**.
+- Capture artifact **1**: both paths persisted, joined to Bing run 3 and its original
+  Group B query. Read-back verified both files exist on disk.
+- Screenshot: **1440 × 1884**, visually inspected; contains the assigned query and ten
+  rendered Bing result cards, not a consent/CAPTCHA page or a mocked HTML rendering.
+- OCR: **2,445 UTF-8 characters**, including the exact assigned query, result titles,
+  and snippets. Several domain names, slash characters and icons were misrecognized;
+  the text is useful for auditing but should not be used as authoritative URLs.
+- The page still contains broad childhood dictionary/encyclopedia references. Capture
+  success does not make those sources relevant to early cancer diagnosis.
+- Prior run 1 retains **20 observations**; run 3 has **10 new observations**. Existing
+  results and captures were not overwritten. The 50-unique-URL target remains unmet.
+
+The live paths are under
+`artifacts/run_3/capture_f82b493febd74769a8bcc0448bddcae5/`.
+All generated files remain ignored by Git. Automated suite: **139 tests passed**
+(including the prior 119); one existing Starlette/httpx deprecation warning remains.
+Live screenshot/OCR/database verification was performed separately from mocked tests.
+
+Workbench queries:
+
+```sql
+USE MY_CUSTOM_BOT;
+SELECT c.id AS artifact_id, c.run_id, r.engine, r.status, q.query_text,
+       c.screenshot_path, c.ocr_text_path, c.created_at
+FROM capture_artifacts c
+JOIN search_runs r ON r.id = c.run_id
+JOIN search_queries q ON q.id = r.query_id
+WHERE c.run_id = 3;
+
+SELECT run_id, COUNT(*) AS stored_observations
+FROM search_results WHERE run_id IN (1, 3)
+GROUP BY run_id;
+```
+
+The queries verify persisted metadata and preserved search observations. Open the PNG
+and UTF-8 text at the stored paths to inspect the actual capture. Neither OCR text
+nor image bytes are stored in MySQL.
 
 ## Milestone 03: multiple search engines
 
@@ -377,7 +484,8 @@ The standard HTML request format follows
 Pagination follows observed links, consistent with the provider's
 [pagination inspection guidance](https://www.scraperapi.com/blog/how-to-deal-with-pagination-in-python-step-by-step-guide-full-code/).
 No structured SERP entitlement is assumed. No retries, CAPTCHA bypass logic,
-frontend, AI integration, screenshots, or OCR are implemented.
+frontend or AI integration is implemented in the historical Milestone 02 work;
+Milestone 04 adds the optional screenshot/OCR feature described above.
 
 Raw HTML artifacts are local and ignored by git. The exact API key is redacted before
 HTML leaves the provider module; request URLs, headers, and raw HTTP exceptions are

@@ -3,12 +3,15 @@ import argparse
 from pathlib import Path
 import re
 import time
+from uuid import uuid4
 
 from mysql.connector import Error
 
 import db
 import bing_search
 import duckduckgo_search
+from capture_page import CaptureError, capture_search_page
+from ocr_capture import extract_screenshot_text
 from clean_urls import clean_results
 from config import get_scraper_config, get_search_fetcher
 from google_search import SearchError, fetch_direct_html, fetch_html
@@ -26,13 +29,15 @@ def validate_query(query: str) -> None:
         raise ValueError("Query must contain at least five meaningful words (see README counting rule)")
 
 
-def run_search(query: str, max_pages: int = 1, fetcher: str | None = None, engine: str = "google") -> dict:
+def run_search(query: str, max_pages: int = 1, fetcher: str | None = None, engine: str = "google", capture: bool = False) -> dict:
     """Commit the run before retrieval, then atomically store observations and counts."""
     validate_query(query)
     if not 1 <= max_pages <= 5:
         raise ValueError("max_pages must be from 1 to 5")
     if engine not in {"google", "bing", "duckduckgo"}:
         raise ValueError("Engine must be google, bing, or duckduckgo")
+    if capture and engine != "bing":
+        raise ValueError("Screenshot capture currently supports Bing only")
     if fetcher is None:
         fetcher = get_search_fetcher() if engine == "google" else "direct"
     if engine != "google" and fetcher != "direct":
@@ -108,7 +113,41 @@ def run_search(query: str, max_pages: int = 1, fetcher: str | None = None, engin
         except Exception:
             raise SearchError(f"Run {run_id}: storage failed and failure status could not be saved; inspect Workbench") from None
         raise SearchError(f"Run {run_id}: result storage failed and was rolled back") from None
-    return {"run_id": run_id, "engine": engine, "fetcher": fetcher, "status": status, "pages": pages, **counts, "error": error}
+    summary = {"run_id": run_id, "engine": engine, "fetcher": fetcher, "status": status, "pages": pages, **counts, "error": error}
+    if capture:
+        if status == "completed" and counts["final_count"] > 0:
+            summary["capture"] = capture_run(query, run_id)
+        else:
+            summary["capture"] = {"status": "skipped", "error": "Capture skipped because search ETL did not produce valid organic results"}
+    return summary
+
+
+def capture_run(query: str, run_id: int) -> dict:
+    """Keep capture failures separate from the already committed search results."""
+    directory = Path(__file__).resolve().parent / "artifacts" / f"run_{run_id}" / f"capture_{uuid4().hex}"
+    try:
+        screenshot = capture_search_page(query, directory / "search_results.png")
+    except (CaptureError, ImportError) as error:
+        message = str(error) if isinstance(error, CaptureError) else "Playwright is missing; install project dependencies"
+        return {"status": "failed", "error": message}
+    ocr, error = None, None
+    try:
+        ocr = extract_screenshot_text(screenshot, directory / "ocr.txt")
+    except (CaptureError, ImportError) as failure:
+        error = str(failure) if isinstance(failure, CaptureError) else "OCR Python dependencies are missing; screenshot retained"
+    try:
+        with db.get_connection() as connection:
+            try:
+                artifact_id = db.insert_capture_artifact(connection, run_id, str(screenshot), str(ocr) if ocr else None)
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
+    except Exception:
+        return {"status": "failed", "screenshot_path": str(screenshot), "ocr_text_path": str(ocr) if ocr else None,
+                "error": "Capture metadata could not be saved; local files retained and search results unchanged"}
+    return {"status": "completed" if ocr else "screenshot_only", "artifact_id": artifact_id,
+            "screenshot_path": str(screenshot), "ocr_text_path": str(ocr) if ocr else None, "error": error}
 
 
 def main() -> int:
@@ -119,9 +158,10 @@ def main() -> int:
     parser.add_argument("--fetcher", choices=["direct", "scraperapi"],
                         help="Google: overrides SEARCH_FETCHER; Bing/DuckDuckGo: direct only")
     parser.add_argument("--engine", choices=["google", "bing", "duckduckgo"], default="google")
+    parser.add_argument("--capture", action="store_true", help="Bing only: render first page, save screenshot and local OCR")
     args = parser.parse_args()
     try:
-        summary = run_search(args.query, args.max_pages, args.fetcher, args.engine)
+        summary = run_search(args.query, args.max_pages, args.fetcher, args.engine, args.capture)
     except ValueError as error:
         # Configuration and query validators only return static, credential-free messages.
         print(str(error))
@@ -139,6 +179,10 @@ def main() -> int:
         print(summary["error"])
     print("50 unique organic results achieved." if summary["final_count"] >= 50
           else "50 unique organic results have not been achieved.")
+    if "capture" in summary:
+        print("Capture:", summary["capture"])
+        if summary["capture"]["status"] != "completed":
+            return 1
     return 0 if summary["status"] == "completed" else 1
 
 
