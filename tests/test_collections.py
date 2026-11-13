@@ -47,7 +47,7 @@ def test_completed_saved_50_requires_no_key_or_paid_calls(monkeypatch):
     monkeypatch.setattr(run_search,'find_saved_collection',lambda *args:deepcopy(saved))
     monkeypatch.setattr(run_search,'get_scraper_config',lambda:pytest.fail('key read before cache'))
     monkeypatch.setattr(google_search,'fetch_results',lambda *args,**kwargs:pytest.fail('paid request'))
-    summary=run_search.run_search(QUERY,mode='collect')
+    summary=run_search.run_search(QUERY,mode='collect', allow_paid=True)
     assert summary['reused'] is True and summary['run_id']==12 and summary['final_count']==50
 
 
@@ -57,14 +57,14 @@ def test_normal_search_reuses_partial_collection(monkeypatch):
         return collection()
     monkeypatch.setattr(run_search,'find_saved_collection',find)
     monkeypatch.setattr(google_search,'fetch_results',lambda *args,**kwargs:pytest.fail('paid request'))
-    assert run_search.run_search(QUERY)['reused'] is True
+    assert run_search.run_search(QUERY, allow_paid=True)['reused'] is True
 
 
 def test_refresh_deliberately_bypasses_cache(workflow,monkeypatch):
     monkeypatch.setattr(run_search,'find_saved_collection',lambda *args:pytest.fail('refresh reused old data'))
     fetch=MagicMock(return_value={'organic_results':[{'title':'Fixture','link':'https://example.org/new','position':1}]})
     monkeypatch.setattr(google_search,'fetch_results',fetch)
-    summary=run_search.run_search(QUERY,refresh=True)
+    summary=run_search.run_search(QUERY,refresh=True, allow_paid=True)
     assert summary['reused'] is False and summary['run_id']==20
     fetch.assert_called_once()
 
@@ -74,7 +74,7 @@ def test_nine_results_per_page_needs_six_pages(workflow,monkeypatch):
         return {'organic_results':[{'title':'Fixture','link':f'https://example.org/{start}-{n}','position':n+1} for n in range(9)]}
     mocked=MagicMock(side_effect=fetch)
     monkeypatch.setattr(google_search,'fetch_results',mocked)
-    summary=run_search.run_search(QUERY,mode='collect',max_pages=10)
+    summary=run_search.run_search(QUERY,mode='collect',max_pages=10, allow_paid=True)
     assert summary['final_count']==54 and summary['pages']==6
     assert [call.kwargs['start'] for call in mocked.call_args_list]==[0,10,20,30,40,50]
     rows=workflow[1].call_args.args[2]
@@ -84,17 +84,17 @@ def test_nine_results_per_page_needs_six_pages(workflow,monkeypatch):
 
 def test_five_pages_cannot_guarantee_fifty(workflow,monkeypatch):
     monkeypatch.setattr(google_search,'fetch_results',lambda query,start=0:{'organic_results':[{'link':f'https://example.org/{start}-{n}'} for n in range(9)]})
-    summary=run_search.run_search(QUERY,mode='collect',max_pages=5)
+    summary=run_search.run_search(QUERY,mode='collect',max_pages=5, allow_paid=True)
     assert summary['final_count']==45 and summary['pages']==5
 
 
 def test_collect_more_appends_without_reinserting_existing_rows(workflow,monkeypatch):
     saved=collection()
     monkeypatch.setattr(db,'get_search_run',lambda run_id:deepcopy(saved))
-    monkeypatch.setattr(run_search,'read_metadata',lambda *args:{'pages':1,'next_start':10})
+    monkeypatch.setattr(run_search,'collection_metadata_for_run',lambda *args:{'pages':1,'next_start':10})
     fetch=MagicMock(return_value={'organic_results':[{'link':'https://example.org/extra','position':2}], 'pagination':{'next_page_url':None}})
     monkeypatch.setattr(google_search,'fetch_results',fetch)
-    summary=run_search.run_search(QUERY,mode='collect',max_pages=10,resume_run_id=12)
+    summary=run_search.run_search(QUERY,mode='collect',max_pages=10,resume_run_id=12, allow_paid=True)
     assert summary['run_id']==12 and summary['raw_count']==10 and summary['final_count']==10
     assert workflow[1].call_args.args[1]==12
     assert len(workflow[1].call_args.args[2])==1
@@ -109,24 +109,24 @@ def test_cannot_extend_unrelated_query_or_provider(workflow,monkeypatch,differen
     monkeypatch.setattr(db,'get_search_run',lambda run_id:collection(query=different_query,provider=different_provider))
     monkeypatch.setattr(google_search,'fetch_results',lambda *args,**kwargs:pytest.fail('paid request'))
     with pytest.raises(ValueError,match='matching saved query/provider'):
-        run_search.run_search(QUERY,mode='collect',resume_run_id=12)
+        run_search.run_search(QUERY,mode='collect',resume_run_id=12, allow_paid=True)
 
 
 def test_collect_more_rollback_preserves_prior_run(workflow,monkeypatch):
     monkeypatch.setattr(db,'get_search_run',lambda run_id:collection())
-    monkeypatch.setattr(run_search,'read_metadata',lambda *args:{'pages':1,'next_start':10})
+    monkeypatch.setattr(run_search,'collection_metadata_for_run',lambda *args:{'pages':1,'next_start':10})
     monkeypatch.setattr(google_search,'fetch_results',lambda *args,**kwargs:{'organic_results':[{'link':'https://example.org/new'}]})
     workflow[1].side_effect=RuntimeError('private details')
     with pytest.raises(SearchError,match='rolled back'):
-        run_search.run_search(QUERY,mode='collect',max_pages=2,resume_run_id=12)
+        run_search.run_search(QUERY,mode='collect',max_pages=2,resume_run_id=12, allow_paid=True)
     workflow[0].rollback.assert_called_once()
-    workflow[0].commit.assert_not_called()
+    workflow[0].commit.assert_called_once()
 
 
 def test_new_run_creation_failure_rolls_back(workflow):
     db.insert_search_run.side_effect=RuntimeError('secret')
     with pytest.raises(SearchError,match='Could not create'):
-        run_search.run_search(QUERY)
+        run_search.run_search(QUERY, allow_paid=True)
     workflow[0].rollback.assert_called_once()
 
 
@@ -134,7 +134,7 @@ def test_new_result_failure_marks_run_failed_without_rows(workflow,monkeypatch):
     monkeypatch.setattr(google_search,'fetch_results',lambda *args,**kwargs:{'organic_results':[{'link':'https://example.org/new'}]})
     workflow[1].side_effect=RuntimeError('secret')
     with pytest.raises(SearchError,match='rolled back'):
-        run_search.run_search(QUERY)
+        run_search.run_search(QUERY, allow_paid=True)
     assert workflow[2].call_args.args[2]=='failed'
     assert workflow[2].call_args.args[3]['raw_count']==0
 
@@ -179,12 +179,12 @@ def test_mysql_boolean_flags_and_ads_are_not_final():
 
 @pytest.mark.parametrize('budget',[0,21,True,'10'])
 def test_invalid_budgets_before_requests(budget):
-    with pytest.raises(ValueError):run_search.run_search(QUERY,mode='collect',max_pages=budget)
+    with pytest.raises(ValueError):run_search.run_search(QUERY,mode='collect',max_pages=budget, allow_paid=True)
 
 
 def test_normal_search_cannot_implicitly_collect():
     with pytest.raises(ValueError,match='Normal search'):
-        run_search.run_search(QUERY,max_pages=10)
+        run_search.run_search(QUERY,max_pages=10, allow_paid=True)
 
 
 def test_cache_sql_preserves_query_and_parameters(monkeypatch):
@@ -200,16 +200,16 @@ def test_collect_more_already_complete_never_spends(workflow,monkeypatch):
     monkeypatch.setattr(db,'get_search_run',lambda run_id:collection(50))
     monkeypatch.setattr(run_search,'get_scraper_config',lambda:pytest.fail('key read'))
     monkeypatch.setattr(google_search,'fetch_results',lambda *args,**kwargs:pytest.fail('paid request'))
-    summary=run_search.run_search(QUERY,mode='collect',resume_run_id=12)
+    summary=run_search.run_search(QUERY,mode='collect',resume_run_id=12, allow_paid=True)
     assert summary['reused'] is True and summary['final_count']==50
 
 
 def test_resume_exhausted_pages_never_spends(workflow,monkeypatch):
     monkeypatch.setattr(db,'get_search_run',lambda run_id:collection())
-    monkeypatch.setattr(run_search,'read_metadata',lambda *args:{'pages':1,'next_start':None})
+    monkeypatch.setattr(run_search,'collection_metadata_for_run',lambda *args:{'pages':1,'next_start':None})
     monkeypatch.setattr(google_search,'fetch_results',lambda *args,**kwargs:pytest.fail('paid request'))
     with pytest.raises(ValueError,match='no further pages'):
-        run_search.run_search(QUERY,mode='collect',resume_run_id=12)
+        run_search.run_search(QUERY,mode='collect',resume_run_id=12, allow_paid=True)
 
 
 def test_provider_interface_allows_extension_without_new_etl(monkeypatch,workflow):
@@ -217,6 +217,23 @@ def test_provider_interface_allows_extension_without_new_etl(monkeypatch,workflo
     fetch=MagicMock(return_value=([{'title':'Fixture','original_url':'https://example.org',
                                   'snippet':None,'result_rank':1,'is_ad':False}],None))
     monkeypatch.setitem(search_providers.PROVIDERS,'fixture',('fixture:direct','direct',fetch))
-    summary=run_search.run_search(QUERY,engine='fixture')
+    summary=run_search.run_search(QUERY,engine='fixture', allow_paid=True)
     assert summary['final_count']==1 and summary['provider']=='fixture:direct'
     assert workflow[1].call_args.args[1]==20
+
+
+def test_page_checkpoints_persist_partial_progress_and_metadata(workflow,monkeypatch):
+    metadata=MagicMock()
+    monkeypatch.setattr(db,'update_collection_metadata',metadata)
+    def fetch(query,start=0):
+        if start>=20:return {'organic_results':[]}
+        first=0 if start==0 else 5
+        return {'organic_results':[{'title':'Fixture','link':f'https://example.org/{n}','position':n+1} for n in range(first,first+9)]}
+    monkeypatch.setattr(google_search,'fetch_results',fetch)
+    summary=run_search.run_search(QUERY,mode='collect',max_pages=10,allow_paid=True)
+    assert summary['raw_count']==18 and summary['duplicate_count']==4 and summary['final_count']==14
+    assert summary['pages']==3
+    assert [call.args[2]['pages'] for call in metadata.call_args_list]==[1,2,3,3]
+    assert metadata.call_args.args[2]['stop_reason']=='empty_page'
+    assert [call.args[2] for call in workflow[2].call_args_list]==['running','running','running','completed']
+    assert sum(len(call.args[2]) for call in workflow[1].call_args_list)==18

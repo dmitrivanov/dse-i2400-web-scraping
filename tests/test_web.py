@@ -58,7 +58,7 @@ def test_search_validation_before_etl(backend, body):
 def test_search_selection_and_db_readback(backend, engine, fetcher):
     response = client.post('/api/search', json={"query": QUERY, "engine": engine, "fetcher": fetcher})
     assert response.status_code == 200
-    backend[0].assert_called_once_with(QUERY, max_pages=1, engine=engine, fetcher=fetcher, capture=False, mode="search", refresh=False, resume_run_id=None)
+    backend[0].assert_called_once_with(QUERY, max_pages=1, engine=engine, fetcher=fetcher, capture=False, mode="search", refresh=False, resume_run_id=None, allow_paid=False)
     backend[1].assert_called_once_with(12)
     assert response.json()['run']['fetcher'] == fetcher
     assert response.json()['results'][0]['title'] == 'Fixture title'

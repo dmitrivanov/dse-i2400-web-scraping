@@ -108,7 +108,7 @@ def capture_workflow(monkeypatch, tmp_path):
     insert = MagicMock(return_value=40)
     monkeypatch.setattr(db, "insert_capture_artifact", insert)
     monkeypatch.setattr(run_search, "__file__", str(tmp_path / "run_search.py"))
-    def screenshot(query, destination):
+    def screenshot(query, destination, **kwargs):
         destination.parent.mkdir(parents=True)
         destination.write_bytes(b"mock screenshot")
         return destination
@@ -134,7 +134,7 @@ def test_capture_path_persistence_and_unique_names(capture_workflow):
 
 
 def test_capture_partial_ocr_failure(capture_workflow, monkeypatch):
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise CaptureError("Tesseract unavailable")
     monkeypatch.setattr(run_search, "extract_screenshot_text", fail)
     summary = run_search.capture_run(QUERY, 12)
@@ -145,7 +145,7 @@ def test_capture_partial_ocr_failure(capture_workflow, monkeypatch):
 
 
 def test_screenshot_failure_has_no_metadata(capture_workflow, monkeypatch):
-    def fail(*args):
+    def fail(*args, **kwargs):
         raise CaptureError("Browser unavailable")
     monkeypatch.setattr(run_search, "capture_search_page", fail)
     summary = run_search.capture_run(QUERY, 12)
@@ -175,8 +175,8 @@ def test_capture_sql_parameters():
 
 
 def test_capture_unsupported_engine_before_writes():
-    with pytest.raises(ValueError, match="Bing only"):
-        run_search.run_search(QUERY, engine="google", capture=True)
+    with pytest.raises(ValueError):
+        run_search.run_search(QUERY, engine="unknown", capture=True, allow_paid=True)
 
 
 @pytest.mark.parametrize("capture,search_fails", [(False, False), (True, False), (True, True)])
@@ -198,13 +198,13 @@ def test_optional_capture_is_after_etl_commit(monkeypatch, tmp_path, capture, se
             raise SearchError("Bing unavailable")
         return (Path(__file__).parent / "fixtures" / "bing_results.html").read_text()
     monkeypatch.setattr(bing_search, "fetch_html", fetch)
-    def capture_files(query, run_id):
-        assert connection.commit.call_count == 2
+    def capture_files(query, run_id, **kwargs):
+        assert connection.commit.call_count == 3
         assert query == QUERY and run_id == 20
         return {"status": "failed", "error": "Fixture browser failure"}
     capture_call = MagicMock(side_effect=capture_files)
     monkeypatch.setattr(run_search, "capture_run", capture_call)
-    summary = run_search.run_search(QUERY, engine="bing", capture=capture)
+    summary = run_search.run_search(QUERY, engine="bing", capture=capture, allow_paid=True)
     if capture and not search_fails:
         capture_call.assert_called_once()
         assert summary["status"] == "completed"
@@ -228,3 +228,22 @@ def test_capture_preserves_exact_query_including_assignment_prefix(browser, tmp_
     assert parse_qs(urlsplit(actual_url).query)["q"] == [query]
     if query.startswith("b)"):
         assert "b%29+Childhood" in actual_url
+
+
+def test_google_capture_uses_original_google_page(browser,tmp_path):
+    page,instance=browser
+    page.url='https://www.google.com/search?'+urlencode({'q':QUERY})
+    capture_search_page(QUERY,tmp_path/'google.png',engine='google')
+    assert page.goto.call_args.args[0].startswith('https://www.google.com/search?')
+    selectors=[call.args[0] for call in page.locator.call_args_list]
+    assert '#search a h3, #rso a h3' in selectors
+    assert (tmp_path/'google.png').exists()
+
+
+def test_google_challenge_does_not_become_a_fake_screenshot(browser,tmp_path):
+    page,instance=browser
+    page.url='https://www.google.com/search?'+urlencode({'q':QUERY})
+    page.title.return_value='Before you continue to Google'
+    with pytest.raises(CaptureError,match='consent or verification'):
+        capture_search_page(QUERY,tmp_path/'google.png',engine='google')
+    assert not (tmp_path/'google.png').exists()

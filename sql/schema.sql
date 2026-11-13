@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS search_runs (
     query_id BIGINT NOT NULL,
     engine VARCHAR(50) NOT NULL,
     provider VARCHAR(100) NULL,
+    collection_metadata JSON NULL,
     status VARCHAR(30) NOT NULL,
     raw_count INT NOT NULL DEFAULT 0,
     ad_count INT NOT NULL DEFAULT 0,

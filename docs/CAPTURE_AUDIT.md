@@ -1,5 +1,42 @@
 # Screenshot and OCR audit
 
+## Milestone 06 update — explicit Google/Bing capture
+
+Capture is now available for a selected saved Google or Bing run through
+`POST /api/runs/{run_id}/capture` and the existing-design GUI button. The endpoint
+reads the original query and engine from MySQL, never the edited search form, and
+calls the existing capture/OCR subsystem. It does not call paid search retrieval or
+rewrite the query. CLI `--capture` also supports Google when its search collection
+is available/authorized. Capture remains explicit, not automatic on every search.
+
+`capture_page.capture_search_page(..., engine=...)` navigates to the actual Google or
+Bing search page and requires an HTTP 200 response, expected final host/path/query,
+and visible genuine result headings/cards. Challenges, consent, shell/unsupported
+pages and unexpected redirects fail instead of producing a fake provider screenshot.
+Ordinary browser redirects/JavaScript are used; no verification controls are clicked,
+no challenge is bypassed, and there is no alternate-provider substitution. OCR runs
+only after a valid PNG exists. Files/SQL association and safe serving remain unchanged.
+
+**Actual Milestone 06 verification:** one explicit Google capture attempt for saved
+run **15** returned `status=failed`, error `Capture navigation left the expected
+provider search/query`. The final page/query did not pass the authenticity guard;
+its exact redirect URL was not retained, so no specific CAPTCHA cause is asserted.
+No Google screenshot/OCR artifact was inserted and the 54 saved result observations
+were unchanged. Do not claim successful authentic Google capture from mocked tests.
+
+Existing Bing artifact **1** (run **3**) still has both files on disk. Its image and
+OCR endpoints returned HTTP **200** in the actual browser verification. The GUI can
+open both. A missing artifact/file continues to return a clear 404; failed capture
+returns its safe outcome in the GUI. OCR timeout/missing executable can preserve a
+screenshot with a NULL OCR path and a partial-status error. No OCR success was claimed
+for the failed Google attempt. Tests cover Google navigation/selector checks, consent
+rejection, run association, OCR handling and safe retrieval without live search.
+
+There were **zero paid API requests** in Milestone 06. Only the single explicitly
+requested ordinary Google browser navigation was attempted. The following original
+05D audit is historical context; its former Bing-only CLI limitation is superseded
+by this section. Verified existing paths remain valid.
+
 ## What is implemented
 
 `capture_page.capture_search_page(query, destination)` uses Playwright Chromium to

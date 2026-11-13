@@ -49,13 +49,15 @@ def insert_search_results(connection: MySQLConnection, run_id: int, results: lis
     if not results:
         return
     with connection.cursor() as cursor:
-        cursor.executemany(
-            """INSERT INTO search_results
-            (run_id, title, original_url, normalized_url, snippet, result_rank, is_ad, is_duplicate, page_number)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
-            [(run_id, row["title"], row["original_url"], row["normalized_url"], row["snippet"],
-              row["result_rank"], row["is_ad"], row["is_duplicate"], row.get("page_number")) for row in results],
-        )
+        for row in results:
+            cursor.execute(
+                """INSERT INTO search_results
+                (run_id, title, original_url, normalized_url, snippet, result_rank, is_ad, is_duplicate, page_number)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (run_id, row["title"], row["original_url"], row["normalized_url"], row["snippet"],
+                 row["result_rank"], row["is_ad"], row["is_duplicate"], row.get("page_number")),
+            )
+            row["id"] = cursor.lastrowid
 
 
 def update_search_run(connection: MySQLConnection, run_id: int, status: str,
@@ -64,10 +66,10 @@ def update_search_run(connection: MySQLConnection, run_id: int, status: str,
     with connection.cursor() as cursor:
         cursor.execute(
             """UPDATE search_runs SET status=%s, raw_count=%s, ad_count=%s,
-            duplicate_count=%s, final_count=%s, finished_at=CURRENT_TIMESTAMP,
+            duplicate_count=%s, final_count=%s, finished_at=CASE WHEN %s='running' THEN NULL ELSE CURRENT_TIMESTAMP END,
             error_message=%s WHERE id=%s""",
             (status, counts["raw_count"], counts["ad_count"], counts["duplicate_count"],
-             counts["final_count"], error_message, run_id),
+             counts["final_count"], status, error_message, run_id),
         )
 
 
@@ -133,3 +135,11 @@ def update_result_duplicates(connection: MySQLConnection, results: list[dict]) -
     with connection.cursor() as cursor:
         cursor.executemany("UPDATE search_results SET is_duplicate=%s WHERE id=%s",
                            [(row["is_duplicate"], row["id"]) for row in results])
+
+
+def update_collection_metadata(connection: MySQLConnection, run_id: int, metadata: dict) -> None:
+    """Persist non-secret collection state in the same transaction as its results."""
+    import json
+    with connection.cursor() as cursor:
+        cursor.execute("UPDATE search_runs SET collection_metadata=%s WHERE id=%s",
+                       (json.dumps(metadata), run_id))

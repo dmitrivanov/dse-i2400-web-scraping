@@ -1,5 +1,49 @@
 # Assignment compliance — Milestone 05D
 
+## Milestone 06 verification update
+
+The Internet workflow now includes explicit paid-request confirmation after cache
+lookup; atomic per-page SQL result/count/progress checkpoints; a nullable SQL JSON
+collection metadata column; and an explicit saved-run Google/Bing capture action.
+No new provider, scraping framework, relevance heuristic or redirect resolver was added.
+
+Existing **run 15** supplies actual live provider evidence: **54 returned organic URL
+strings**, **6 pages**, offsets **0,10,20,30,40,50**, exact Group B query, persisted
+positions/page numbers, no ads and no repeated exact URLs. These rows were displayed
+and cache-reused in the GUI without spending credits. Metadata is now in MySQL.
+However, **47 URLs are opaque Google redirects and only 7 are direct URL addresses**.
+The 54 strings are not evidence of 54 different publisher destinations. The GUI
+separates these quantities and marks opaque destinations unverified. Saved data is
+offered before further spend; explicit Refresh/Collect More remains deliberate.
+
+| Requirement/update | Status | Evidence and limit |
+| --- | --- | --- |
+| Organic extraction, page/rank associations, deduplication, SQL persistence and display | complete | Actual saved six-page run 15 and mocked checkpoint/error tests. URLs preserved exactly. |
+| 50 distinct supplied organic URL strings | complete | 54 live saved strings displayed; not a claim of distinct publisher destinations. |
+| 50 distinct direct URLs / publisher destination uniqueness | unverified | 50+ direct-address collection is mocked; 47 live redirect destinations remain opaque. No network resolution was added. |
+| Explicit paid consent/cache reuse | complete | Existing 54-string collection reused without authorization or paid call; deliberate Refresh prompt declined in real browser. |
+| Complete collection metadata in MySQL | complete | New SQL JSON field; per-page transaction metadata; verified run 15 metadata copied to SQL from actual sidecar/evidence. |
+| Authentic screenshot/OCR workflow initiated for structured Google run | partial | Explicit action implemented; live Google capture failed page/query authenticity guard, no fabricated screenshot/record. |
+| Existing screenshots/OCR retrievable | complete | Bing artifact 1/run 3 image and OCR links both HTTP 200 and files exist. |
+
+**Live status:** 54 supplied URL strings are verified from existing provider data.
+**Mock-only status:** at least 50 distinct direct-address collection logic.
+**Not verified:** 50 distinct publisher destinations and successful Google screenshot/OCR.
+The task did not automatically purchase a full collection: **zero paid API calls**
+were needed. One authentic Google browser attempt failed safely. New collection
+progress/metadata persist page-by-page, and failures preserve previous committed data.
+
+Final suite: **186 tests passed**, one existing dependency deprecation warning.
+New tests cover paid authorization (strict boolean), opaque-link evidence, saved
+reuse, SQL metadata/checkpoints, partial pages/failures, MySQL-assigned result IDs,
+Google capture guards and retrieval. Actual browser verification displayed 54 cards,
+correct counts, declined paid Refresh, working old artifact links and responsive
+layout, without JavaScript errors. Original run 12 remains readable.
+
+The 05D matrix below remains the baseline audit. AI execution, summarization, AI UI
+mode/output links and broad multi-engine verification remain outside Milestone 06.
+Full assignment completion is not asserted while the stated evidence gaps remain.
+
 ## Rubric and evidence boundaries
 
 The original **DSE I2400 PROJECT  OUTLINE.docx** was available locally and read from

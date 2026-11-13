@@ -12,6 +12,81 @@ Milestone 05D simplifies retrieval and audits the authoritative local
 - [Screenshot/OCR audit and verified paths](docs/CAPTURE_AUDIT.md)
 - [Historical Bing query investigation](BING_DIAGNOSIS.md)
 
+## Milestone 06 — verified workflow and evidence limits
+
+The Internet workflow now checkpoints each successful provider page and its collection
+metadata in MySQL. A nullable `search_runs.collection_metadata JSON` column stores
+mode, target, budget, saved pages, next offset, stop reason and URL evidence counts.
+The GUI polls these saved counts while a collection is running. Each page's rows,
+flags, counts and metadata commit together; a later request/storage failure retains
+previous committed pages and reports a failed/partial collection. New insert IDs are
+recorded without assuming contiguous auto-increment values. Old local JSON remains
+response evidence; historical metadata sidecars are read when SQL metadata is absent.
+
+Paid requests require an explicit authorization **after cache lookup**. An adequate
+saved collection returns immediately. A cache miss returns HTTP 409 before creating
+a run or contacting ScraperAPI; the GUI asks before retrying with `allow_paid:true`.
+Declining spends nothing. The CLI requires `--allow-paid` to authorize its bounded
+request budget. No automatic full collection, retry or fallback is introduced.
+
+Actual evidence reused in this milestone: **run 15**, unchanged Group B query,
+structured Google provider, **54 returned organic URL strings** across **six saved
+pages**, `start=0,10,20,30,40,50`, with **0 exact-string duplicates** and **0 ads**.
+The existing collection and its metadata were verified in MySQL and displayed in the
+GUI; no new paid API request was needed. This does not establish 54 distinct publisher
+pages: **47 URLs are opaque Google /goto redirects; 7 are direct URL addresses**.
+
+Both original and normalized URLs remain exactly supplied for structured Google.
+No redirect URLs/tokens are decoded or followed. Exact-string duplicate flags mean
+only repeated supplied URLs. Different opaque tokens do not establish different
+publisher destinations. The GUI labels these links as destination-unverified and
+shows observed URL count, direct URL count and redirect count separately. Even a
+non-redirect-looking address is not proof that its content/canonical destination was
+independently verified. The conservative direct-URL target does not count opaque
+Google redirect tokens. A saved 50-observation collection is still offered before any
+further spend, with this uncertainty visible; deliberate Collect More can extend it.
+
+**50-target verification:**
+
+- Verified live from saved provider evidence: 54 distinct supplied organic URL strings,
+  six-page persistence, rank/page associations and actual GUI display.
+- Verified with mocked responses: collecting at least 50 distinct direct URLs,
+  cross-page deduplication, empty/error/partial pages and atomic SQL checkpoints.
+- Not yet verified: 50 distinct publisher destinations or a successful authentic
+  Google screenshot/OCR. No full paid collection was purchased in Milestone 06.
+
+An explicit **Capture selected run · screenshot & OCR** button now opens the saved
+run's original Google/Bing page once using existing Playwright, then existing local
+Tesseract OCR if an authentic screenshot succeeds. It does not rerun paid retrieval,
+reconstruct results locally or substitute Bing for Google. One Google attempt on
+run 15 failed the expected provider page/query check; no image/OCR record was created.
+The app reported the failure and preserved the collection. Existing Bing artifact 1
+remains viewable and both image/OCR links returned 200. See CAPTURE_AUDIT.md.
+
+The local schema addition was applied without dropping data. Other installations
+should check SHOW COLUMNS and run `sql/milestone06.sql` once if collection_metadata
+is missing. Run 15's verified existing metadata was copied from its sidecar to SQL
+with computed URL evidence counts; original result URLs/ranks/pages were not changed.
+
+```sh
+# Cache first. If no sufficient saved data exists, confirmation is required:
+python run_search.py "childhood cancer early diagnosis methods" --collect-50 --max-pages 10
+# Deliberately authorize the bounded budget (do not run just for verification):
+python run_search.py "childhood cancer early diagnosis methods" --collect-50 --max-pages 10 --allow-paid
+```
+
+API additions: `allow_paid` must be a literal boolean; `POST /api/runs/{id}/capture`
+uses the saved query/engine; `GET /api/runs/{id}` returns SQL collection metadata,
+observed/direct/redirect counts and safe artifact links. Polling uses read-only run
+history/detail endpoints, not background jobs or a second search pipeline. Capture
+failures and missing files are reported clearly. Existing path-safety checks remain.
+
+**186 tests passed**, with one existing Starlette/httpx deprecation warning. Browser
+checks confirmed saved collection reuse, declined paid Refresh, correct evidence
+labels, screenshot/OCR retrieval, no JavaScript errors and no mobile overflow.
+Zero paid API requests were made in Milestone 06. A real full Internet-assignment
+completion claim remains premature while destination/capture limitations remain.
+
 ## Setup
 
 Prerequisites: Python 3.10+, MySQL 8.0.16+, MySQL Workbench. Tesseract and Playwright
@@ -40,6 +115,7 @@ For an existing database:
 2. If needed, run `sql/milestone02.sql` once to allow unknown ad status (NULL).
 3. Apply `sql/milestone05d.sql` once if `provider`/`page_number` are missing. If one
    already exists, run only the missing column statement. Never rerun ADD blindly.
+4. Apply `sql/milestone06.sql` once if collection_metadata is missing.
 
 05D adds nullable provider/page provenance columns only. This workspace's two additions
 were applied and row counts verified unchanged. Startup never performs DDL; historical
@@ -97,10 +173,10 @@ python run_search.py "childhood cancer early diagnosis methods"
 python run_search.py "childhood cancer early diagnosis methods" --collect-50 --max-pages 10
 
 # Explicit new paid request / new collection:
-python run_search.py "childhood cancer early diagnosis methods" --refresh
+python run_search.py "childhood cancer early diagnosis methods" --refresh --allow-paid
 
 # Deliberately append to an eligible saved run, not a different query:
-python run_search.py "childhood cancer early diagnosis methods" --collect-50 --max-pages 10 --resume-run 12
+python run_search.py "childhood cancer early diagnosis methods" --collect-50 --max-pages 10 --resume-run 15 --allow-paid
 ```
 
 No paid collection was run for this milestone. Requests stop at target, exhaustion,
@@ -113,7 +189,7 @@ filler/Boolean list: `a an the and or not of in on at to for with please`. Numbe
 not count; repeats do. Hyphens/apostrophes split tokens. This is a simple documented
 rule, not linguistic classification. The original stored/sent query remains unchanged.
 
-## Optional authentic capture / legacy Bing CLI
+## Authentic capture / legacy Bing CLI
 
 Bing's verified CLI/capture subsystem is retained, but its inconsistent direct results
 are not offered as a working GUI search choice. It uses the same provider interface,
@@ -129,8 +205,8 @@ python run_search.py "childhood cancer early diagnosis methods" --engine bing --
 ```
 
 This explicit command captures the first original Bing SERP, runs English OCR and
-stores file paths in capture_artifacts. GUI searches do not launch capture. Google
-capture is unsupported and rejected. See CAPTURE_AUDIT.md for artifact 1's actual paths,
+stores file paths in capture_artifacts. GUI searches do not launch capture automatically. Use the explicit saved-run capture
+button for Google or Bing; ordinary Google navigation can still fail or be challenged. See CAPTURE_AUDIT.md for artifact 1's actual paths,
 HTTP retrieval links, partial failure behavior, and realistic Google capture gaps.
 
 ## Verification
@@ -164,7 +240,7 @@ SELECT COUNT(*) AS ai_response_count FROM ai_responses;
 SELECT COUNT(*) AS ai_summary_count FROM ai_summaries;
 ```
 
-Remaining major assignment gaps: no verified live 50-result collection; no AI provider
+Remaining major assignment gaps: no verified 50 distinct publisher destinations; no AI provider
 execution, summarization or AI mode/output links; no authentic Google screenshot/OCR;
 limited verified additional-engine coverage and no dedicated multi-engine batch command.
 The requested new `/v1` route still needs an explicitly authorized future live check.

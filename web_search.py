@@ -9,9 +9,9 @@ from pydantic import BaseModel, Field, model_validator
 
 import db
 from google_search import SearchError
-from run_search import CollectionError, run_search, validate_query
+from run_search import CollectionError, PaidRequestRequired, capture_run, run_search, validate_query
 from config import get_collection_page_limit
-from saved_searches import provider_for_run, read_metadata
+from saved_searches import provider_for_run, collection_metadata_for_run
 
 router = APIRouter()
 ROOT = Path(__file__).resolve().parent
@@ -26,6 +26,7 @@ class SearchRequest(BaseModel):
     mode: Literal["search", "collect"] = "search"
     max_pages: int | None = Field(default=None, ge=1, le=20, strict=True)
     refresh: bool = False
+    allow_paid: bool = Field(default=False, strict=True)
     resume_run_id: int | None = Field(default=None, ge=1, strict=True)
 
     @model_validator(mode="after")
@@ -48,13 +49,19 @@ def read_run(run_id: int) -> dict:
     if data is None:
         raise HTTPException(404, "Search run not found")
     # Old web sidecars are read for history, not written by new search requests.
-    collection = read_metadata(run_id)
-    legacy = collection or read_metadata(run_id, "web_request.json")
+    collection = collection_metadata_for_run(data["run"])
+    legacy = collection
     candidate = legacy.get("fetcher")
     fetcher = candidate if candidate in {"direct", "scraperapi"} else None
     data["run"]["provider"] = provider_for_run(data["run"])
     data["run"]["fetcher"] = "scraperapi" if data["run"]["provider"] == "google:scraperapi:structured" else fetcher
-    data["run"]["satisfies_50"] = data["run"]["final_count"] >= 50
+    from clean_urls import clean_results, is_google_redirect, url_evidence_counts
+    cleaned, _ = clean_results(data["results"], preserve_urls=data["run"]["engine"] == "google")
+    for row in data["results"]:
+        row["destination_unverified"] = is_google_redirect(row.get("normalized_url") or row["original_url"])
+    evidence = url_evidence_counts(cleaned)
+    data["run"].update(evidence)
+    data["run"]["satisfies_50"] = evidence["direct_url_count"] >= 50
     data["collection"] = collection
     data["artifacts"] = [
         {"id": item["id"],
@@ -76,13 +83,15 @@ def execute_search(request: SearchRequest):
     try:
         summary = run_search(request.query, max_pages=request.max_pages, engine=request.engine,
                              fetcher=request.fetcher, capture=False, mode=request.mode,
-                             refresh=request.refresh, resume_run_id=request.resume_run_id)
+                             refresh=request.refresh, resume_run_id=request.resume_run_id, allow_paid=request.allow_paid)
         data = read_run(summary["run_id"])
         data["run"]["fetcher"] = request.fetcher
         data["reused"] = summary.get("reused", False)
         data["target_count"] = summary.get("target_count", 1)
         data["warning"] = summary.get("warning")
         return data
+    except PaidRequestRequired as error:
+        raise HTTPException(409, {"requires_confirmation": True, "message": str(error)}) from None
     except CollectionError as error:
         raise HTTPException(400, str(error)) from None
     except ValueError:
@@ -139,3 +148,19 @@ def search_options():
         return {"collection_max_pages": get_collection_page_limit(), "max_allowed_pages": 20}
     except ValueError:
         raise HTTPException(400, "Collection page configuration is invalid") from None
+
+
+@router.post("/api/runs/{run_id}/capture")
+def capture_saved_run(run_id: int):
+    """Explicit browser/OCR action on the saved query, independent of paid search."""
+    try:
+        data = db.get_search_run(run_id)
+        if not data:
+            raise HTTPException(404, "Search run not found")
+        run = data["run"]
+        if run["engine"] not in {"google", "bing"} or run["status"] == "running" or not data["results"]:
+            raise HTTPException(400, "Select a finished Google/Bing run with saved results to capture")
+        result = capture_run(run["query_text"], run_id, engine=run["engine"])
+        return {key: result[key] for key in ("status", "artifact_id", "error") if key in result}
+    except (Error, ValueError):
+        raise HTTPException(503, "Database unavailable; capture was not started") from None

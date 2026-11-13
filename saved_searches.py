@@ -41,6 +41,23 @@ def find_saved_collection(query: str, engine: str, provider: str, minimum_count:
         if data is None or data["run"]["query_text"] != query or data["run"]["engine"] != engine:
             continue
         _, counts = clean_results(data["results"], preserve_urls=engine == "google")
+        # Offer adequate saved observations before considering any further spend.
+        # The response separately reports opaque redirects and destination uncertainty.
         if counts["final_count"] >= minimum_count:
             return data
     return None
+
+
+def collection_metadata_for_run(run: dict) -> dict:
+    """MySQL is authoritative for new runs; old sidecars remain readable evidence."""
+    value = run.get("collection_metadata")
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        try:
+            data = json.loads(value)
+            if isinstance(data, dict):
+                return data
+        except ValueError:
+            pass
+    return read_metadata(run["id"]) or read_metadata(run["id"], "web_request.json")

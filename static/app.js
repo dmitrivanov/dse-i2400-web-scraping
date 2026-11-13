@@ -19,7 +19,8 @@ async function api(url, options = {}, timeoutMs = 90000) {
     const data = await response.json();
     if (!response.ok) {
       const detail = Array.isArray(data.detail) ? data.detail.map(item => item.msg).join('; ') : data.detail;
-      throw new Error(detail || 'The request could not be completed.');
+      const error = new Error(typeof detail === 'object' ? detail.message : detail || 'The request could not be completed.');
+      error.status = response.status; error.detail = data.detail; throw error;
     }
     return data;
   } catch (error) {
@@ -46,7 +47,8 @@ function renderResults() {
     const isAd = row.is_ad === true || row.is_ad === 1;
     const isOrganic = row.is_ad === false || row.is_ad === 0;
     top.append(node('span', isAd ? 'Advertisement' : isOrganic ? 'Organic placement' : 'Unknown placement', `badge ${isAd ? 'ad' : isOrganic ? '' : 'unknown'}`));
-    if (row.is_duplicate) top.append(node('span', 'Duplicate', 'badge duplicate'));
+    if (row.destination_unverified) top.append(node('span', 'Google redirect · destination unverified', 'badge unknown'));
+    if (row.is_duplicate) top.append(node('span', 'Repeated URL string', 'badge duplicate'));
     if (!row.normalized_url) top.append(node('span', 'Invalid URL', 'badge unknown'));
     article.append(top);
     const heading = node('h3');
@@ -66,7 +68,7 @@ function showRun(data) {
   byId('run-status').textContent = `#${run.id} · ${run.status}`;
   byId('run-status').className = `badge ${run.status === 'failed' ? 'failed' : ''}`;
   const values = byId('diagnostic-values'); values.replaceChildren();
-  for (const [label, value] of [ ['Query', run.query_text], ['Engine', run.engine], ['Fetcher', run.fetcher || 'Not recorded for this run'], ['Run ID', run.id], ['Status', run.status], ['Raw', run.raw_count], ['Ads', run.ad_count], ['Duplicates', run.duplicate_count], ['Unique organic', `${run.final_count} / 50`], ['Provider', run.provider || 'Historical / not recorded'], ['Error', run.error_message || 'None'] ]) {
+  for (const [label, value] of [ ['Query', run.query_text], ['Engine', run.engine], ['Fetcher', run.fetcher || 'Not recorded for this run'], ['Run ID', run.id], ['Status', run.status], ['Raw', run.raw_count], ['Ads', run.ad_count], ['Exact URL duplicates', run.duplicate_count], ['Distinct observed URLs', run.final_count], ['Direct result URLs', `${run.direct_url_count ?? '—'} / 50`], ['Google redirect URLs', run.google_redirect_count ?? '—'], ['Pages saved', data.collection?.pages ?? 'Not recorded'], ['Provider', run.provider || 'Historical / not recorded'], ['Error', run.error_message || 'None'] ]) {
     const item = node('div'); item.append(node('dt', label), node('dd', value)); values.append(item);
   }
   const links = byId('artifact-links'); links.replaceChildren();
@@ -77,9 +79,10 @@ function showRun(data) {
   }
   let warning = data.warning || '';
   if (data.reused) warning = `Reused saved run #${run.id}. No paid request was made.`;
-  if (data.target_count === 50 && run.final_count < 50) warning = [warning, `Saved ${run.final_count} / 50 unique organic URLs. The 50-URL requirement is not yet satisfied.`].filter(Boolean).join(' ');
-  if (run.final_count >= 50) warning = [warning, 'This saved collection satisfies the 50-URL requirement.'].filter(Boolean).join(' ');
+  if (data.target_count === 50 && !run.satisfies_50) warning = [warning, `Saved ${run.final_count} distinct supplied URLs, including ${run.direct_url_count ?? 0} direct URLs. The conservative 50-direct-URL target is not yet satisfied.`].filter(Boolean).join(' ');
+  if (run.satisfies_50) warning = [warning, 'This saved collection contains at least 50 distinct direct URL addresses; publisher content has not been independently verified.'].filter(Boolean).join(' ');
   if (run.error_message || run.status === 'failed' || !run.final_count) warning = [warning, run.error_message || 'This run produced zero usable organic URLs. The engine may be blocked or its HTML unsupported.'].filter(Boolean).join(' ');
+  if (run.google_redirect_count) warning = [warning, `${run.google_redirect_count} Google redirect URLs have unverified destinations; different tokens do not prove different publisher pages.`].filter(Boolean).join(' ');
   message(warning);
   renderResults();
   updateActions();
@@ -97,7 +100,7 @@ async function loadHistory(initial = false) {
     for (const run of rows) {
       const button = node('button', null, 'history-item'); button.type = 'button'; button.dataset.id = run.id; button.disabled = busy;
       button.setAttribute('aria-current', String(current?.run.id === run.id));
-      button.append(node('strong', run.query_text), node('small', `#${run.id} · ${run.engine} · ${run.status} · ${run.final_count} / 50 unique organic`));
+      button.append(node('strong', run.query_text), node('small', `#${run.id} · ${run.engine} · ${run.status} · ${run.final_count} distinct observed URLs`));
       button.addEventListener('click', () => openRun(run.id)); list.append(button);
     }
     if (initial && rows.length) await openRun(rows[0].id);
@@ -108,7 +111,8 @@ function updateActions() {
   byId('max-pages').disabled = busy || !collect;
   const sameQuery = current?.run.query_text === byId('query').value;
   const compatible = current?.run.provider === 'google:scraperapi:structured';
-  byId('collect-more').disabled = busy || !sameQuery || !compatible || current.run.final_count >= 50;
+  byId('collect-more').disabled = busy || !sameQuery || !compatible || current.run.satisfies_50;
+  byId('capture-run').disabled = busy || !current || !['google', 'bing'].includes(current.run.engine) || !current.results.length || current.run.status === 'running';
   byId('search-button').firstChild.textContent = collect ? 'Collect 50 ' : 'Search ';
 }
 function setBusy(value) {
@@ -124,11 +128,35 @@ async function submitSearch(refresh = false, resumeRunId = null) {
   const pages = mode === 'collect' ? Number(byId('max-pages').value) : 1;
   if (!Number.isInteger(pages) || pages < 1 || pages > 20) { message('Choose a page budget from 1 to 20.'); return; }
   setBusy(true); message('');
+  byId('loading').lastChild.textContent = ' Checking saved collections; only authorized pages will be requested…';
+  const baseline = Math.max(0, ...Array.from(document.querySelectorAll('.history-item')).map(item => Number(item.dataset.id)));
+  let progressBusy = false;
+  const progress = setInterval(async () => {
+    if (progressBusy) return;
+    progressBusy = true;
+    try {
+      const runs = await api('/api/runs');
+      const active = runs.find(run => run.query_text === byId('query').value && run.engine === 'google' && (resumeRunId ? run.id === resumeRunId : run.id > baseline));
+      if (active) {
+        const data = await api(`/api/runs/${active.id}`);
+        byId('loading').lastChild.textContent = ` Run #${active.id}: ${data.collection?.pages ?? 0} pages saved, ${data.run.final_count} distinct observed URLs, ${data.run.direct_url_count ?? 0} direct URLs / 50.`;
+      }
+    } catch { /* Final request/error display remains authoritative. */ }
+    finally { progressBusy = false; }
+  }, 2000);
+  const body = {query:byId('query').value, engine:'google', mode, max_pages:pages, refresh, resume_run_id:resumeRunId, allow_paid:false};
   try {
-    const data = await api('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:byId('query').value, engine:'google', mode, max_pages:pages, refresh, resume_run_id:resumeRunId})}, pages * 75000 + 15000);
+    let data;
+    try { data = await api('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}, pages * 75000 + 15000); }
+    catch (error) {
+      if (error.status !== 409 || !error.detail?.requires_confirmation) throw error;
+      if (!window.confirm(error.message)) { message('No paid requests were authorized.'); return; }
+      body.allow_paid = true;
+      data = await api('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}, pages * 75000 + 15000);
+    }
     showRun(data);
   } catch (error) { message(error.message); }
-  finally { await loadHistory(); setBusy(false); }
+  finally { clearInterval(progress); await loadHistory(); setBusy(false); }
 }
 byId('search-form').addEventListener('submit', event => { event.preventDefault(); submitSearch(); });
 byId('refresh-search').addEventListener('click', () => submitSearch(true));
@@ -139,3 +167,15 @@ byId('organic-only').addEventListener('change', renderResults);
 byId('refresh-history').addEventListener('click', () => loadHistory());
 loadHistory(true);
 api('/api/search-options').then(options => { byId('max-pages').value = options.collection_max_pages; updateActions(); }).catch(error => message(error.message));
+
+byId('capture-run').addEventListener('click', async () => {
+  if (busy || !current) return;
+  const runId = current.run.id;
+  setBusy(true); message('Opening the original provider page for an authentic capture…');
+  try {
+    const result = await api(`/api/runs/${runId}/capture`, {method:'POST'}, 150000);
+    await openRun(runId);
+    message(result.status === 'completed' ? 'Authentic provider screenshot and local OCR saved.' : result.error || 'Capture did not complete.');
+  } catch (error) { message(error.message); }
+  finally { setBusy(false); }
+});

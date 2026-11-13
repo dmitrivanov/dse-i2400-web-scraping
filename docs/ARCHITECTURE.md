@@ -1,5 +1,16 @@
 # Architecture after Milestone 05D
 
+## Milestone 06 changes (current)
+
+New collection metadata is authoritative in MySQL (`collection_metadata JSON`), with
+per-page transactional checkpoints and UI polling. A cache miss requires explicit
+paid authorization; the GUI can decline without issuing a provider request. Saved
+Google/Bing runs have a separate explicit authentic capture/OCR action. Supplied
+URLs remain unchanged; observed strings, direct addresses and opaque Google redirect
+counts are reported separately. Opaque tokens are never called verified publisher
+destinations. See the current README and Milestone 06 sections of the compliance and
+capture audits; the following sections describe the preceding 05D baseline.
+
 ## Scope and flow
 
 The application is a local FastAPI app, plain HTML/CSS/JavaScript, explicit MySQL SQL,

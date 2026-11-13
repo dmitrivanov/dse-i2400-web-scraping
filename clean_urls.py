@@ -102,3 +102,27 @@ def supplied_url(url: str) -> str | None:
         return url
     except ValueError:
         return None
+
+
+def url_evidence_counts(results: list[dict]) -> dict[str, int]:
+    """Opaque Google redirect URLs do not prove distinct publisher destinations."""
+    direct, redirects = set(), set()
+    for row in results:
+        url = row.get("normalized_url")
+        if not url or row["is_ad"] is None or bool(row["is_ad"]) or row["is_duplicate"]:
+            continue
+        if is_google_redirect(url):
+            redirects.add(url)
+        else:
+            direct.add(url)
+    return {"direct_url_count": len(direct), "google_redirect_count": len(redirects)}
+
+
+def is_google_redirect(url: str) -> bool:
+    """Recognize opaque provider redirect links without following or decoding them."""
+    try:
+        parts = urlsplit(url)
+        host = (parts.hostname or "").lower()
+        return bool(re.fullmatch(r"(?:www\.)?google\.(?:com|[a-z]{2,3}(?:\.[a-z]{2})?)", host)) and parts.path.rstrip("/") in {"/url", "/goto", "/aclk", "/pagead/aclk"}
+    except ValueError:
+        return False
