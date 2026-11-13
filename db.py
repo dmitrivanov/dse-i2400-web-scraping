@@ -36,11 +36,11 @@ def insert_search_query(connection: MySQLConnection, query: str) -> int:
         return cursor.lastrowid
 
 
-def insert_search_run(connection: MySQLConnection, query_id: int, engine: str = "google") -> int:
+def insert_search_run(connection: MySQLConnection, query_id: int, engine: str = "google", provider: str | None = None) -> int:
     """Start an engine-specific run for an existing query."""
     with connection.cursor() as cursor:
-        cursor.execute("INSERT INTO search_runs (query_id, engine, status) VALUES (%s, %s, %s)",
-                       (query_id, engine, "running"))
+        cursor.execute("INSERT INTO search_runs (query_id, engine, status, provider) VALUES (%s, %s, %s, %s)",
+                       (query_id, engine, "running", provider))
         return cursor.lastrowid
 
 
@@ -51,10 +51,10 @@ def insert_search_results(connection: MySQLConnection, run_id: int, results: lis
     with connection.cursor() as cursor:
         cursor.executemany(
             """INSERT INTO search_results
-            (run_id, title, original_url, normalized_url, snippet, result_rank, is_ad, is_duplicate)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)""",
+            (run_id, title, original_url, normalized_url, snippet, result_rank, is_ad, is_duplicate, page_number)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
             [(run_id, row["title"], row["original_url"], row["normalized_url"], row["snippet"],
-              row["result_rank"], row["is_ad"], row["is_duplicate"]) for row in results],
+              row["result_rank"], row["is_ad"], row["is_duplicate"], row.get("page_number")) for row in results],
         )
 
 
@@ -100,7 +100,7 @@ def get_search_run(run_id: int) -> dict | None:
             run = cursor.fetchone()
             if run is None:
                 return None
-            cursor.execute("SELECT * FROM search_results WHERE run_id=%s ORDER BY result_rank, id", (run_id,))
+            cursor.execute("SELECT * FROM search_results WHERE run_id=%s ORDER BY id", (run_id,))
             results = cursor.fetchall()
             cursor.execute("SELECT * FROM capture_artifacts WHERE run_id=%s ORDER BY id", (run_id,))
             return {"run": run, "results": results, "artifacts": cursor.fetchall()}
@@ -112,3 +112,24 @@ def get_capture_artifact(artifact_id: int) -> dict | None:
         with connection.cursor(dictionary=True) as cursor:
             cursor.execute("SELECT * FROM capture_artifacts WHERE id=%s", (artifact_id,))
             return cursor.fetchone()
+
+
+def get_collection_candidates(query: str, engine: str, minimum_count: int) -> list[dict]:
+    """Find completed exact-query collections without merging separate runs."""
+    with get_connection() as connection:
+        with connection.cursor(dictionary=True) as cursor:
+            cursor.execute("""SELECT r.* FROM search_runs r
+                JOIN search_queries q ON q.id=r.query_id
+                WHERE CAST(q.query_text AS BINARY)=CAST(%s AS BINARY)
+                AND r.engine=%s AND r.status='completed' AND r.final_count >= %s
+                ORDER BY r.final_count DESC, r.id DESC""", (query, engine, minimum_count))
+            return cursor.fetchall()
+
+
+def update_result_duplicates(connection: MySQLConnection, results: list[dict]) -> None:
+    """Update flags only on existing observations when a collection is extended."""
+    if not results:
+        return
+    with connection.cursor() as cursor:
+        cursor.executemany("UPDATE search_results SET is_duplicate=%s WHERE id=%s",
+                           [(row["is_duplicate"], row["id"]) for row in results])

@@ -192,6 +192,7 @@ def test_optional_capture_is_after_etl_commit(monkeypatch, tmp_path, capture, se
     update = MagicMock()
     monkeypatch.setattr(db, "update_search_run", update)
     monkeypatch.setattr(run_search, "__file__", str(tmp_path / "run_search.py"))
+    monkeypatch.setattr(run_search, 'find_saved_collection', lambda *args: None)
     def fetch(*args, **kwargs):
         if search_fails:
             raise SearchError("Bing unavailable")

@@ -30,7 +30,7 @@ def test_requests_endpoint_exact_query_and_start(settings, monkeypatch):
     response = MagicMock(status_code=200)
     response.json.return_value = payload()
     def get(url, **kwargs):
-        assert url == 'https://api.scraperapi.com/structured/google/search'
+        assert url == 'https://api.scraperapi.com/structured/google/search/v1'
         assert kwargs['params'] == {'api_key': 'test-secret', 'query': QUERY, 'start': 20}
         assert kwargs['allow_redirects'] is False
         assert kwargs['timeout'] == (10, 60)
@@ -100,13 +100,14 @@ def workflow(monkeypatch, tmp_path):
     monkeypatch.setattr(run_search, 'get_scraper_config', lambda: {})
     monkeypatch.setattr(run_search, '__file__', str(tmp_path / 'run_search.py'))
     monkeypatch.setattr(run_search.time, 'sleep', lambda seconds: None)
+    monkeypatch.setattr(run_search, 'find_saved_collection', lambda *args: None)
     return query, save, update
 
 
 def test_exact_query_pagination_and_duplicate_stop(workflow, monkeypatch):
     fetch = MagicMock(return_value=payload())
-    monkeypatch.setattr(run_search, 'fetch_results', fetch)
-    summary = run_search.run_search(QUERY, max_pages=5, engine='google', fetcher='scraperapi')
+    monkeypatch.setattr(google_search, 'fetch_results', fetch)
+    summary = run_search.run_search(QUERY, max_pages=5, engine='google', fetcher='scraperapi', mode='collect')
     assert summary['pages'] == 2 and summary['final_count'] == 1
     assert summary['duplicate_count'] == 1 and summary['raw_count'] == 2
     workflow[0].assert_called_once()
@@ -119,15 +120,15 @@ def test_exact_query_pagination_and_duplicate_stop(workflow, monkeypatch):
 
 def test_explicit_page_limit(workflow, monkeypatch):
     fetch = MagicMock(return_value=payload())
-    monkeypatch.setattr(run_search, 'fetch_results', fetch)
+    monkeypatch.setattr(google_search, 'fetch_results', fetch)
     assert run_search.run_search(QUERY, max_pages=1, fetcher='scraperapi')['pages'] == 1
     fetch.assert_called_once_with(QUERY, start=0)
 
 
 def test_empty_organic_results_do_not_spend_another_page(workflow, monkeypatch):
     fetch = MagicMock(return_value={'organic_results': []})
-    monkeypatch.setattr(run_search, 'fetch_results', fetch)
-    summary = run_search.run_search(QUERY, max_pages=5, fetcher='scraperapi')
+    monkeypatch.setattr(google_search, 'fetch_results', fetch)
+    summary = run_search.run_search(QUERY, max_pages=5, fetcher='scraperapi', mode='collect')
     assert summary['status'] == 'completed' and summary['raw_count'] == 0
     fetch.assert_called_once()
 
@@ -136,8 +137,8 @@ def test_target_50_unique_and_offsets(workflow, monkeypatch):
     def fetch(query, start=0):
         return {'organic_results': [{'title': 'Fixture', 'link': f'https://example.org/{n}', 'position': n+1} for n in range(start,start+10)]}
     mocked = MagicMock(side_effect=fetch)
-    monkeypatch.setattr(run_search, 'fetch_results', mocked)
-    summary = run_search.run_search(QUERY, max_pages=5, fetcher='scraperapi')
+    monkeypatch.setattr(google_search, 'fetch_results', mocked)
+    summary = run_search.run_search(QUERY, max_pages=5, fetcher='scraperapi', mode='collect')
     assert summary['final_count'] == 50 and summary['pages'] == 5
     assert [call.kwargs['start'] for call in mocked.call_args_list] == [0,10,20,30,40]
 
@@ -146,8 +147,8 @@ def test_next_page_failure_preserves_first_page(workflow, monkeypatch):
     def fetch(query, start=0):
         if start: raise SearchError('Structured Google returned HTTP 429')
         return payload()
-    monkeypatch.setattr(run_search, 'fetch_results', fetch)
-    summary = run_search.run_search(QUERY, max_pages=5, fetcher='scraperapi')
+    monkeypatch.setattr(google_search, 'fetch_results', fetch)
+    summary = run_search.run_search(QUERY, max_pages=5, fetcher='scraperapi', mode='collect')
     assert summary['status'] == 'failed' and summary['raw_count'] == 1 and summary['final_count'] == 1
     assert workflow[2].call_args.args[2] == 'failed'
 
@@ -160,8 +161,8 @@ def test_web_page_limits(pages):
 def test_provider_declared_last_page_does_not_fetch_again(workflow, monkeypatch):
     data = payload(); data['pagination'] = {'next_page_url': None}
     fetch = MagicMock(return_value=data)
-    monkeypatch.setattr(run_search, 'fetch_results', fetch)
-    summary = run_search.run_search(QUERY, max_pages=5, fetcher='scraperapi')
+    monkeypatch.setattr(google_search, 'fetch_results', fetch)
+    summary = run_search.run_search(QUERY, max_pages=5, fetcher='scraperapi', mode='collect')
     assert summary['pages'] == 1
     fetch.assert_called_once()
 
@@ -172,9 +173,9 @@ def test_web_forwards_page_limit_and_exact_query(monkeypatch, tmp_path):
     monkeypatch.setattr(web_search, 'ARTIFACT_ROOT', tmp_path)
     fetch = MagicMock(return_value={'run_id': 23, 'pages': 2})
     monkeypatch.setattr(web_search, 'run_search', fetch)
-    data = {'run': {'id':23, 'query_text': QUERY}, 'results':[], 'artifacts':[]}
+    data = {'run': {'id':23, 'query_text': QUERY, 'engine':'google', 'final_count':0}, 'results':[], 'artifacts':[]}
     monkeypatch.setattr(db, 'get_search_run', lambda run_id:deepcopy(data))
-    response = TestClient(app).post('/api/search', json={'query':QUERY, 'engine':'google', 'max_pages':2})
+    response = TestClient(app).post('/api/search', json={'query':QUERY, 'engine':'google', 'max_pages':2, 'mode':'collect'})
     assert response.status_code == 200
-    fetch.assert_called_once_with(QUERY, max_pages=2, engine='google', fetcher='scraperapi', capture=False)
+    fetch.assert_called_once_with(QUERY, max_pages=2, engine='google', fetcher='scraperapi', capture=False, mode='collect', refresh=False, resume_run_id=None)
     assert response.json()['run']['query_text'] == QUERY

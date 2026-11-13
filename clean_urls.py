@@ -76,15 +76,16 @@ def clean_results(results: list[dict], preserve_urls: bool = False) -> tuple[lis
         if url is None:
             continue
         previous = winners.get(url)
-        if previous is None or (row["is_ad"] is False and cleaned[previous]["is_ad"] is not False):
+        if previous is None or (row["is_ad"] is not None and not bool(row["is_ad"])
+                                 and (cleaned[previous]["is_ad"] is None or bool(cleaned[previous]["is_ad"]))):
             winners[url] = index
     counts = {"raw_count": len(cleaned), "ad_count": 0, "duplicate_count": 0, "final_count": 0}
     for index, row in enumerate(cleaned):
         url = row["normalized_url"]
         row["is_duplicate"] = bool(url and winners[url] != index)
-        counts["ad_count"] += row["is_ad"] is True
+        counts["ad_count"] += bool(row["is_ad"])
         counts["duplicate_count"] += row["is_duplicate"]
-        if url and row["is_ad"] is False and not row["is_duplicate"]:
+        if url and row["is_ad"] is not None and not bool(row["is_ad"]) and not row["is_duplicate"]:
             counts["final_count"] += 1
     return cleaned, counts
 

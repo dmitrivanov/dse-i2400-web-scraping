@@ -31,7 +31,7 @@ def get_database_config() -> dict[str, str | int]:
 
 
 def get_scraper_config() -> dict[str, str]:
-    """Read credentials for the standard HTTPS HTML endpoint only."""
+    """Read credentials for the configured ScraperAPI HTTPS origin."""
     from urllib.parse import urlsplit
 
     load_dotenv(Path(__file__).resolve().parent / ".env")
@@ -51,10 +51,13 @@ def get_scraper_config() -> dict[str, str]:
     return {"api_key": key, "base_url": base}
 
 
-def get_search_fetcher() -> str:
-    """Choose the configured fetcher, defaulting Google to structured ScraperAPI."""
+def get_collection_page_limit() -> int:
+    """Read a default collection budget of ten pages, bounded to 1–20."""
     load_dotenv(Path(__file__).resolve().parent / ".env")
-    fetcher = os.getenv("SEARCH_FETCHER", "scraperapi").strip().lower()
-    if fetcher not in {"direct", "scraperapi"}:
-        raise ValueError("SEARCH_FETCHER must be direct or scraperapi")
-    return fetcher
+    try:
+        value = int(os.getenv("COLLECTION_MAX_PAGES", "10"))
+    except ValueError:
+        raise ValueError("COLLECTION_MAX_PAGES must be an integer from 1 to 20") from None
+    if not 1 <= value <= 20:
+        raise ValueError("COLLECTION_MAX_PAGES must be an integer from 1 to 20")
+    return value

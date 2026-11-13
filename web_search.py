@@ -1,5 +1,4 @@
 """Small web routes around the existing ETL and database read functions."""
-import json
 from pathlib import Path
 from typing import Literal
 
@@ -10,7 +9,9 @@ from pydantic import BaseModel, Field, model_validator
 
 import db
 from google_search import SearchError
-from run_search import run_search, validate_query
+from run_search import CollectionError, run_search, validate_query
+from config import get_collection_page_limit
+from saved_searches import provider_for_run, read_metadata
 
 router = APIRouter()
 ROOT = Path(__file__).resolve().parent
@@ -18,17 +19,26 @@ ARTIFACT_ROOT = ROOT / "artifacts"
 
 
 class SearchRequest(BaseModel):
-    """Explicit engine/fetcher choices; no environment-driven paid requests."""
+    """Primary provider and deliberate collection/refresh choices, without fallback."""
     query: str = Field(min_length=1, max_length=1000)
-    engine: Literal["google", "bing", "duckduckgo"] = "google"
-    fetcher: Literal["direct", "scraperapi"] | None = None
-    max_pages: int = Field(default=1, ge=1, le=5, strict=True)
+    engine: Literal["google"] = "google"
+    fetcher: Literal["scraperapi"] = "scraperapi"
+    mode: Literal["search", "collect"] = "search"
+    max_pages: int | None = Field(default=None, ge=1, le=20, strict=True)
+    refresh: bool = False
+    resume_run_id: int | None = Field(default=None, ge=1, strict=True)
 
     @model_validator(mode="after")
     def validate_search(self):
         validate_query(self.query)
-        if self.fetcher is None:
-            self.fetcher = "scraperapi" if self.engine == "google" else "direct"
+        if self.mode == "search":
+            if self.max_pages not in (None, 1):
+                raise ValueError("Normal search uses one page; choose Collect 50 for pagination")
+            self.max_pages = 1
+        elif self.max_pages is None:
+            self.max_pages = get_collection_page_limit()
+        if self.resume_run_id is not None and (self.mode != "collect" or self.refresh):
+            raise ValueError("Collect More requires collect mode without refresh")
         return self
 
 
@@ -37,18 +47,15 @@ def read_run(run_id: int) -> dict:
     data = db.get_search_run(run_id)
     if data is None:
         raise HTTPException(404, "Search run not found")
-    # The schema predates fetcher tracking. Preserve new web-run choices in a small
-    # local sidecar; older runs honestly show an unknown fetcher, without guessing.
-    fetcher = None
-    metadata = ARTIFACT_ROOT / f"run_{run_id}" / "web_request.json"
-    try:
-        if metadata.resolve().is_relative_to(ARTIFACT_ROOT.resolve()):
-            candidate = json.loads(metadata.read_text(encoding="utf-8")).get("fetcher")
-            if candidate in {"direct", "scraperapi"}:
-                fetcher = candidate
-    except (OSError, ValueError, AttributeError):
-        pass
-    data["run"]["fetcher"] = fetcher
+    # Old web sidecars are read for history, not written by new search requests.
+    collection = read_metadata(run_id)
+    legacy = collection or read_metadata(run_id, "web_request.json")
+    candidate = legacy.get("fetcher")
+    fetcher = candidate if candidate in {"direct", "scraperapi"} else None
+    data["run"]["provider"] = provider_for_run(data["run"])
+    data["run"]["fetcher"] = "scraperapi" if data["run"]["provider"] == "google:scraperapi:structured" else fetcher
+    data["run"]["satisfies_50"] = data["run"]["final_count"] >= 50
+    data["collection"] = collection
     data["artifacts"] = [
         {"id": item["id"],
          "screenshot_url": f"/api/artifacts/{item['id']}/screenshot" if item["screenshot_path"] else None,
@@ -68,22 +75,16 @@ def execute_search(request: SearchRequest):
     """Run a bounded number of pages in FastAPI's sync worker, then read persisted rows."""
     try:
         summary = run_search(request.query, max_pages=request.max_pages, engine=request.engine,
-                             fetcher=request.fetcher, capture=False)
-        warning = None
-        try:
-            directory = ARTIFACT_ROOT / f"run_{summary['run_id']}"
-            if not directory.resolve().is_relative_to(ARTIFACT_ROOT.resolve()):
-                raise OSError("Invalid artifacts directory")
-            directory.mkdir(parents=True, exist_ok=True)
-            # Only non-secret provenance is saved, not keys or configuration dumps.
-            with (directory / "web_request.json").open("x", encoding="utf-8") as output:
-                json.dump({"fetcher": request.fetcher, "max_pages": request.max_pages, "pages": summary.get("pages")}, output)
-        except OSError:
-            warning = "Search saved; fetcher history metadata could not be saved"
+                             fetcher=request.fetcher, capture=False, mode=request.mode,
+                             refresh=request.refresh, resume_run_id=request.resume_run_id)
         data = read_run(summary["run_id"])
         data["run"]["fetcher"] = request.fetcher
-        data["warning"] = warning
+        data["reused"] = summary.get("reused", False)
+        data["target_count"] = summary.get("target_count", 1)
+        data["warning"] = summary.get("warning")
         return data
+    except CollectionError as error:
+        raise HTTPException(400, str(error)) from None
     except ValueError:
         raise HTTPException(400, "Search configuration is invalid; check local settings") from None
     except Error:
@@ -130,3 +131,11 @@ def artifact_file(artifact_id: int, kind: Literal["screenshot", "ocr"]):
         raise HTTPException(404, "Artifact file not available") from None
     return FileResponse(path, media_type="image/png" if kind == "screenshot" else "text/plain; charset=utf-8",
                         headers={"X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/api/search-options")
+def search_options():
+    try:
+        return {"collection_max_pages": get_collection_page_limit(), "max_allowed_pages": 20}
+    except ValueError:
+        raise HTTPException(400, "Collection page configuration is invalid") from None

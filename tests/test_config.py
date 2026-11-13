@@ -60,3 +60,17 @@ def test_missing_scraper_key(monkeypatch):
     monkeypatch.delenv("SCRAPER_API_KEY", raising=False)
     with pytest.raises(ValueError, match="SCRAPER_API_KEY"):
         config.get_scraper_config()
+
+
+@pytest.mark.parametrize('value,expected', [(None,10),('1',1),('20',20)])
+def test_collection_default_budget(monkeypatch,value,expected):
+    if value is None:monkeypatch.delenv('COLLECTION_MAX_PAGES',raising=False)
+    else:monkeypatch.setenv('COLLECTION_MAX_PAGES',value)
+    assert config.get_collection_page_limit()==expected
+
+
+@pytest.mark.parametrize('value',['0','21','invalid'])
+def test_invalid_collection_config(monkeypatch,value):
+    monkeypatch.setenv('COLLECTION_MAX_PAGES',value)
+    with pytest.raises(ValueError,match='COLLECTION_MAX_PAGES'):
+        config.get_collection_page_limit()

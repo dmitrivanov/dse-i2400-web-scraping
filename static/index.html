@@ -14,13 +14,15 @@
       <label for="query">Search query</label>
       <textarea id="query" name="query" rows="2" maxlength="1000" required>childhood cancer early diagnosis methods</textarea>
       <div class="controls">
-        <div><label for="engine">Search engine</label><select id="engine"><option value="bing">Bing</option><option value="google" selected>Google</option><option value="duckduckgo">DuckDuckGo</option></select></div>
-        <div><label for="fetcher">Retrieval method</label><select id="fetcher"><option value="direct">Direct HTTP · legacy Google HTML</option><option value="scraperapi" selected>ScraperAPI JSON · paid</option></select></div>
-        <div><label for="max-pages">Page limit</label><select id="max-pages"><option value="1" selected>1 page</option><option value="2">2 pages</option><option value="3">3 pages</option><option value="4">4 pages</option><option value="5">5 pages</option></select></div>
+        <div><label for="engine">Search provider</label><select id="engine"><option value="google">Google · ScraperAPI JSON</option></select></div>
+        <div><label for="mode">Collection target</label><select id="mode"><option value="search">One-page search</option><option value="collect">Collect 50 unique URLs</option></select></div>
+        <div><label for="max-pages">Total page budget</label><input id="max-pages" type="number" min="1" max="20" value="10" disabled></div>
         <button id="search-button" type="submit">Search <span aria-hidden="true">↗</span></button>
       </div>
-      <p class="hint" id="fetcher-note">Google uses structured ScraperAPI JSON. Each page uses paid credits; one page is selected by default. Stops at 50 unique organic results or the selected page limit.</p>
+      <p class="hint" id="fetcher-note">Search reuses a matching completed collection when available. Otherwise, one-page search uses one paid request. Collect 50 uses your explicit page budget, capped at 20.</p>
       <p class="hint">Use at least five meaningful words. Exact wording can change engine results; queries are preserved as entered.</p>
+      <div class="artifact-links"><button id="refresh-search" type="button" class="text-button">Refresh · new paid requests</button><button id="collect-more" type="button" class="text-button" disabled>Collect More · extend saved run</button></div>
+      <p class="hint">Collect More requires the exact saved query. Images/OCR appear only when an authentic capture exists; Google JSON is not a screenshot.</p>
     </form>
     <div id="loading" class="loading" role="status" hidden><span class="spinner"></span>Searching and saving observations… This may take up to a minute per page.</div>
   </section>
@@ -32,7 +34,7 @@
         <dl id="diagnostic-values"><div><dt>Query</dt><dd>Choose a previous run or start a search.</dd></div></dl>
         <div id="artifact-links" class="artifact-links"></div>
       </section>
-      <div class="section-heading results-heading"><div><p class="eyebrow">EXTRACTED OBSERVATIONS</p><h2>Search results <span id="result-count" class="muted"></span></h2></div><label class="filter"><input id="organic-only" type="checkbox"> Unique organic only</label></div>
+      <div class="section-heading results-heading"><div><p class="eyebrow">EXTRACTED OBSERVATIONS</p><h2>Search results <span id="result-count" class="muted"></span></h2></div><label class="filter"><input id="organic-only" type="checkbox" checked> Unique organic only</label></div>
       <p id="empty-state" class="empty-state">Your results will appear here. Recent searches reopen from MySQL without another external request.</p>
       <div id="results"></div>
     </section>

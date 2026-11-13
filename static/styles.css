@@ -134,7 +134,7 @@ textarea {
   align-items:end;
   margin:18px 0 12px;
 }
-select {
+select, .controls input[type="number"] {
   height:44px;
   width:100%;
   padding:0 12px;

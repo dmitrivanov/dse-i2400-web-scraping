@@ -24,6 +24,8 @@ def stored_run():
 
 @pytest.fixture
 def backend(monkeypatch, tmp_path):
+    import saved_searches
+    monkeypatch.setattr(saved_searches, "ARTIFACT_ROOT", tmp_path)
     monkeypatch.setattr(web_search, "ARTIFACT_ROOT", tmp_path)
     run = MagicMock(return_value={"run_id": 12})
     read = MagicMock(side_effect=lambda run_id: deepcopy(stored_run()))
@@ -36,7 +38,7 @@ def test_interface_and_static_assets():
     response = client.get('/search')
     assert response.status_code == 200 and 'text/html' in response.headers['content-type']
     assert QUERY in response.text
-    assert 'value="scraperapi" selected' in response.text
+    assert 'Google · ScraperAPI JSON' in response.text
     assert client.get('/static/app.js').status_code == 200
     assert client.get('/static/styles.css').status_code == 200
 
@@ -52,16 +54,16 @@ def test_search_validation_before_etl(backend, body):
     backend[0].assert_not_called()
 
 
-@pytest.mark.parametrize("engine,fetcher", [("bing", "direct"), ("duckduckgo", "direct"), ("google", "direct"), ("google", "scraperapi"), ("bing", "scraperapi"), ("duckduckgo", "scraperapi")])
+@pytest.mark.parametrize("engine,fetcher", [("google", "scraperapi")])
 def test_search_selection_and_db_readback(backend, engine, fetcher):
     response = client.post('/api/search', json={"query": QUERY, "engine": engine, "fetcher": fetcher})
     assert response.status_code == 200
-    backend[0].assert_called_once_with(QUERY, max_pages=1, engine=engine, fetcher=fetcher, capture=False)
+    backend[0].assert_called_once_with(QUERY, max_pages=1, engine=engine, fetcher=fetcher, capture=False, mode="search", refresh=False, resume_run_id=None)
     backend[1].assert_called_once_with(12)
     assert response.json()['run']['fetcher'] == fetcher
     assert response.json()['results'][0]['title'] == 'Fixture title'
     assert response.json()['results'][0]['is_ad'] is None
-    assert client.get('/api/runs/12').json()['run']['fetcher'] == fetcher
+    assert response.json()['run']['fetcher'] == fetcher
 
 
 def test_web_defaults_use_structured_google(backend):
@@ -169,3 +171,24 @@ def test_read_sql_parameters_and_results():
         data = db.get_search_run(12)
     assert data['results'][0]['title'] == 'Fixture title'
     assert [call.args[1] for call in cursor.execute.call_args_list] == [(12,), (12,), (12,)]
+
+
+def test_collection_action_error_is_actionable(backend):
+    from run_search import CollectionError
+    backend[0].side_effect=CollectionError('Increase the total page budget to collect more')
+    response=client.post('/api/search',json={'query':QUERY,'mode':'collect','resume_run_id':12})
+    assert response.status_code==400
+    assert response.json()['detail']=='Increase the total page budget to collect more'
+
+
+def test_options_report_bounded_config_without_search(backend,monkeypatch):
+    monkeypatch.setattr(web_search,'get_collection_page_limit',lambda:12)
+    assert client.get('/api/search-options').json()=={'collection_max_pages':12,'max_allowed_pages':20}
+    backend[0].assert_not_called()
+
+
+def test_web_rejects_legacy_production_choices(backend):
+    for body in [{'query':QUERY,'engine':'duckduckgo'}, {'query':QUERY,'engine':'bing'},
+                 {'query':QUERY,'fetcher':'direct'}]:
+        assert client.post('/api/search',json=body).status_code==422
+    backend[0].assert_not_called()

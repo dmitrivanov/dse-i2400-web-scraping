@@ -68,10 +68,7 @@ def next_page_start(html: str, query: str, current: int) -> int | None:
     return None
 
 
-def fetch_scraper_html(query: str, start: int = 0) -> str:
-    """Use paid HTML retrieval only when the caller explicitly selects it."""
-    from config import get_scraper_config
-    from scraper_api import fetch_target_html
-
-    target = "https://www.bing.com/search?" + urlencode({"q": query, "first": start or 1})
-    return fetch_target_html(target, get_scraper_config())
+def fetch_page(query: str, start: int = 0) -> tuple[list[dict], int | None]:
+    """Legacy CLI adapter; browser capture remains an independent optional step."""
+    html = fetch_html(query, start)
+    return parse_results(html), next_page_start(html, query, start)
