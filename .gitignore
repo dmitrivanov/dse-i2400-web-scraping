@@ -1,0 +1,22 @@
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Python
+.venv/
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# macOS
+.DS_Store
+
+# Microsoft Office temporary files
+~$*
+
+# Codex
+.codex/
+
+# Generated scraping data
+artifacts/
