@@ -60,7 +60,7 @@ def test_http_200_redirect_shell_is_not_results(monkeypatch):
         parse_results(google_search.fetch_direct_html("query"))
 
 
-@pytest.mark.parametrize("environment, expected", [(None, "direct"), ("direct", "direct"), ("scraperapi", "scraperapi")])
+@pytest.mark.parametrize("environment, expected", [(None, "scraperapi"), ("direct", "direct"), ("scraperapi", "scraperapi")])
 def test_fetcher_configuration(monkeypatch, environment, expected):
     monkeypatch.setattr(config, "load_dotenv", lambda *args: None)
     if environment is None:
@@ -89,9 +89,10 @@ def test_workflow_selection(monkeypatch, tmp_path, explicit, configured, expecte
     monkeypatch.setattr(run_search, "get_scraper_config", scraper_config)
     monkeypatch.setattr(run_search, "__file__", str(tmp_path / "run_search.py"))
     body = '<div class="g"><a href="https://example.org"><h3>Fixture</h3></a></div>'
-    direct, paid = MagicMock(return_value=body), MagicMock(return_value=body)
+    direct = MagicMock(return_value=body)
+    paid = MagicMock(return_value={"organic_results": [{"title": "Fixture result", "link": "https://example.org", "position": 1}]})
     monkeypatch.setattr(run_search, "fetch_direct_html", direct)
-    monkeypatch.setattr(run_search, "fetch_html", paid)
+    monkeypatch.setattr(run_search, "fetch_results", paid)
     summary = run_search.run_search("childhood cancer early diagnosis methods", fetcher=explicit)
     assert summary["fetcher"] == expected
     assert summary["final_count"] == 1

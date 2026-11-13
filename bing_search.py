@@ -1,5 +1,5 @@
 """Direct Bing retrieval, result-card extraction, and explicit next-page offsets."""
-from urllib.parse import parse_qs, urljoin, urlsplit
+from urllib.parse import parse_qs, urlencode, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 import httpx
@@ -66,3 +66,12 @@ def next_page_start(html: str, query: str, current: int) -> int | None:
     except ValueError:
         pass
     return None
+
+
+def fetch_scraper_html(query: str, start: int = 0) -> str:
+    """Use paid HTML retrieval only when the caller explicitly selects it."""
+    from config import get_scraper_config
+    from scraper_api import fetch_target_html
+
+    target = "https://www.bing.com/search?" + urlencode({"q": query, "first": start or 1})
+    return fetch_target_html(target, get_scraper_config())

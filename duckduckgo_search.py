@@ -1,5 +1,5 @@
 """DuckDuckGo's public non-JavaScript HTML interface and result-card parser."""
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlencode, urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 import httpx
@@ -91,3 +91,17 @@ def next_page_start(html: str, query: str, current: dict | int) -> dict | None:
         if previous < offset <= 100:
             return {"method": method, "params": params}
     return None
+
+
+def fetch_scraper_html(query: str, start: dict | int = 0) -> str:
+    """Explicit paid GET retrieval; do not silently change a POST pagination form."""
+    from config import get_scraper_config
+    from scraper_api import fetch_target_html
+
+    params = {"q": query}
+    if isinstance(start, dict):
+        if start["method"] != "get":
+            raise SearchError("ScraperAPI DuckDuckGo POST pagination is not supported; prior results retained")
+        params.update(start["params"])
+        params["q"] = query
+    return fetch_target_html(ENDPOINT + "?" + urlencode(params), get_scraper_config())

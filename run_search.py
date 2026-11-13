@@ -1,5 +1,6 @@
-"""Command-line search HTML → extraction → cleaning → MySQL workflow."""
+"""Command-line search retrieval → extraction → cleaning → MySQL workflow."""
 import argparse
+import json
 from pathlib import Path
 import re
 import time
@@ -14,7 +15,9 @@ from capture_page import CaptureError, capture_search_page
 from ocr_capture import extract_screenshot_text
 from clean_urls import clean_results
 from config import get_scraper_config, get_search_fetcher
-from google_search import SearchError, fetch_direct_html, fetch_html
+from google_search import (
+    SearchError, fetch_direct_html, fetch_results, parse_organic_results, next_results_start,
+)
 from parse_results import next_page_start, parse_results
 
 FILLER_WORDS = {"a", "an", "the", "and", "or", "not", "of", "in", "on", "at", "to", "for", "with", "please"}
@@ -40,18 +43,23 @@ def run_search(query: str, max_pages: int = 1, fetcher: str | None = None, engin
         raise ValueError("Screenshot capture currently supports Bing only")
     if fetcher is None:
         fetcher = get_search_fetcher() if engine == "google" else "direct"
-    if engine != "google" and fetcher != "direct":
-        raise ValueError("ScraperAPI is supported only for Google; select direct for other engines")
     if fetcher not in {"direct", "scraperapi"}:
         raise ValueError("Fetcher must be direct or scraperapi")
     if fetcher == "scraperapi":
         get_scraper_config()
-    retrieve = fetch_direct_html if fetcher == "direct" else fetch_html
+    retrieve = fetch_direct_html
     parse, next_page = parse_results, next_page_start
     if engine == "bing":
         retrieve, parse, next_page = bing_search.fetch_html, bing_search.parse_results, bing_search.next_page_start
     elif engine == "duckduckgo":
         retrieve, parse, next_page = duckduckgo_search.fetch_html, duckduckgo_search.parse_results, duckduckgo_search.next_page_start
+    if fetcher == "scraperapi" and engine == "bing":
+        retrieve = bing_search.fetch_scraper_html
+    elif fetcher == "scraperapi" and engine == "duckduckgo":
+        retrieve = duckduckgo_search.fetch_scraper_html
+    structured = engine == "google" and fetcher == "scraperapi"
+    if structured:
+        retrieve = fetch_results
     with db.get_connection() as connection:
         try:
             query_id = db.insert_search_query(connection, query)
@@ -68,17 +76,27 @@ def run_search(query: str, max_pages: int = 1, fetcher: str | None = None, engin
         directory.mkdir(parents=True, exist_ok=True)
         start = 0
         for page in range(max_pages):
-            html = retrieve(query, start=start)
-            (directory / f"page_{page + 1}.html").write_text(html, encoding="utf-8")
-            rows = parse(html)
-            for row in rows:
-                row["result_rank"] += len(observations)
+            payload = retrieve(query, start=start)
+            if structured:
+                rows = parse_organic_results(payload)
+                # Save observations only; full provider metadata can contain signed URLs/keys.
+                (directory / f"page_{page + 1}.json").write_text(
+                    json.dumps({"organic_results": rows}, ensure_ascii=False), encoding="utf-8")
+            else:
+                (directory / f"page_{page + 1}.html").write_text(payload, encoding="utf-8")
+                rows = parse(payload)
+                for row in rows:
+                    if row["result_rank"] is not None:
+                        row["result_rank"] += len(observations)
+            previous_final = clean_results(observations, preserve_urls=structured)[1]["final_count"]
             observations.extend(rows)
             pages += 1
-            _, counts = clean_results(observations)
+            _, counts = clean_results(observations, preserve_urls=structured)
             if counts["final_count"] >= 50:
                 break
-            next_start = next_page(html, query, start)
+            if structured and page > 0 and counts["final_count"] == previous_final:
+                break
+            next_start = next_results_start(payload, start) if structured else next_page(payload, query, start)
             if next_start is None:
                 break
             start = next_start
@@ -87,8 +105,8 @@ def run_search(query: str, max_pages: int = 1, fetcher: str | None = None, engin
     except SearchError as failure:
         status, error = "failed", str(failure)
     except Exception:
-        status, error = "failed", "HTML processing failed; inspect local artifacts and configuration"
-    results, counts = clean_results(observations)
+        status, error = "failed", "Search response processing failed; inspect local artifacts and configuration"
+    results, counts = clean_results(observations, preserve_urls=structured)
     try:
         with db.get_connection() as connection:
             try:
@@ -154,9 +172,9 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run one small search HTML ETL")
     parser.add_argument("query")
     parser.add_argument("--max-pages", type=int, default=1, choices=range(1, 6),
-                        help="default 1; up to 5 pages after confirming HTML extraction works")
+                        help="explicit request budget: default 1 page, maximum 5")
     parser.add_argument("--fetcher", choices=["direct", "scraperapi"],
-                        help="Google: overrides SEARCH_FETCHER; Bing/DuckDuckGo: direct only")
+                        help="Google defaults to structured ScraperAPI; direct HTTP remains selectable")
     parser.add_argument("--engine", choices=["google", "bing", "duckduckgo"], default="google")
     parser.add_argument("--capture", action="store_true", help="Bing only: render first page, save screenshot and local OCR")
     args = parser.parse_args()

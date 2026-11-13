@@ -63,9 +63,13 @@ def normalize_url(original: str) -> str | None:
         return None
 
 
-def clean_results(results: list[dict]) -> tuple[list[dict], dict[str, int]]:
+def clean_results(results: list[dict], preserve_urls: bool = False) -> tuple[list[dict], dict[str, int]]:
     """Choose one representative per valid URL, preferring a known organic row."""
-    cleaned = [dict(row, normalized_url=normalize_url(row["original_url"])) for row in results]
+    cleaned = []
+    for row in results:
+        original = row["original_url"]
+        normalized = supplied_url(original) if preserve_urls else normalize_url(original)
+        cleaned.append(dict(row, normalized_url=normalized))
     winners = {}
     for index, row in enumerate(cleaned):
         url = row["normalized_url"]
@@ -83,3 +87,17 @@ def clean_results(results: list[dict]) -> tuple[list[dict], dict[str, int]]:
         if url and row["is_ad"] is False and not row["is_duplicate"]:
             counts["final_count"] += 1
     return cleaned, counts
+
+
+def supplied_url(url: str) -> str | None:
+    """Validate a supplied HTTP(S) link without decoding, rewriting, or resolving it."""
+    try:
+        parts = urlsplit(url)
+        if (parts.scheme.lower() not in {"http", "https"} or not parts.hostname
+                or parts.username or parts.password or "\\" in url
+                or any(ord(char) <= 32 or ord(char) == 127 for char in url)):
+            return None
+        _ = parts.port  # Reject invalid port syntax without changing the supplied URL.
+        return url
+    except ValueError:
+        return None

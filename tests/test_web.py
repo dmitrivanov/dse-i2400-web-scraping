@@ -36,7 +36,7 @@ def test_interface_and_static_assets():
     response = client.get('/search')
     assert response.status_code == 200 and 'text/html' in response.headers['content-type']
     assert QUERY in response.text
-    assert 'value="scraperapi" disabled' in response.text
+    assert 'value="scraperapi" selected' in response.text
     assert client.get('/static/app.js').status_code == 200
     assert client.get('/static/styles.css').status_code == 200
 
@@ -44,15 +44,15 @@ def test_interface_and_static_assets():
 @pytest.mark.parametrize("body", [
     {"query": "short query"}, {"query": ""}, {"query": "x" * 1001},
     {"query": QUERY, "engine": "unknown"}, {"query": QUERY, "fetcher": "unknown"},
-    {"query": QUERY, "engine": "bing", "fetcher": "scraperapi"},
-    {"query": QUERY, "engine": "duckduckgo", "fetcher": "scraperapi"},
+    {"query": QUERY, "engine": "bing", "max_pages": 6},
+    {"query": QUERY, "engine": "duckduckgo", "fetcher": 123},
 ])
 def test_search_validation_before_etl(backend, body):
     assert client.post('/api/search', json=body).status_code == 422
     backend[0].assert_not_called()
 
 
-@pytest.mark.parametrize("engine,fetcher", [("bing", "direct"), ("duckduckgo", "direct"), ("google", "direct"), ("google", "scraperapi")])
+@pytest.mark.parametrize("engine,fetcher", [("bing", "direct"), ("duckduckgo", "direct"), ("google", "direct"), ("google", "scraperapi"), ("bing", "scraperapi"), ("duckduckgo", "scraperapi")])
 def test_search_selection_and_db_readback(backend, engine, fetcher):
     response = client.post('/api/search', json={"query": QUERY, "engine": engine, "fetcher": fetcher})
     assert response.status_code == 200
@@ -64,10 +64,10 @@ def test_search_selection_and_db_readback(backend, engine, fetcher):
     assert client.get('/api/runs/12').json()['run']['fetcher'] == fetcher
 
 
-def test_web_defaults_do_not_select_paid_fetcher(backend):
+def test_web_defaults_use_structured_google(backend):
     assert client.post('/api/search', json={"query": QUERY}).status_code == 200
-    assert backend[0].call_args.kwargs['fetcher'] == 'direct'
-    assert backend[0].call_args.kwargs['engine'] == 'bing'
+    assert backend[0].call_args.kwargs['fetcher'] == 'scraperapi'
+    assert backend[0].call_args.kwargs['engine'] == 'google'
 
 
 def test_provider_failed_run_is_returned_honestly(backend):

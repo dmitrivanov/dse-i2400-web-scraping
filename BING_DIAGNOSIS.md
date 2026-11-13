@@ -141,3 +141,14 @@ Executed: **146 tests passed**, preserving all prior 139. One existing Starlette
 TestClient deprecation warning remains. Raw comparison HTML and sanitized JSON evidence
 are local ignored artifacts (`artifacts/bing_04a_1.html`, `bing_04a_2.html`, and
 `bing_04a_comparison.json`). No secrets or generated artifacts belong in the commit.
+
+## Later observation: prefix is not a universal explanation
+
+Subsequent saved run 9 and new direct diagnostics returned medical results for the
+unprefixed Group B query. Both standard space encodings gave the same destinations.
+The morbidity query still produced dictionary results with different quote styles and
+an assignment prefix. These observations limit the earlier conclusion: the two exact
+queries differed at the time of Task 04A, but adding a prefix has not been established
+as a general correction. Retrieval does not load fixture results or branch on topics.
+See README's request-based retrieval follow-up for current availability and transport
+limitations.

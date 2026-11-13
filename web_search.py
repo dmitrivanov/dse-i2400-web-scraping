@@ -20,14 +20,15 @@ ARTIFACT_ROOT = ROOT / "artifacts"
 class SearchRequest(BaseModel):
     """Explicit engine/fetcher choices; no environment-driven paid requests."""
     query: str = Field(min_length=1, max_length=1000)
-    engine: Literal["google", "bing", "duckduckgo"] = "bing"
-    fetcher: Literal["direct", "scraperapi"] = "direct"
+    engine: Literal["google", "bing", "duckduckgo"] = "google"
+    fetcher: Literal["direct", "scraperapi"] | None = None
+    max_pages: int = Field(default=1, ge=1, le=5, strict=True)
 
     @model_validator(mode="after")
     def validate_search(self):
         validate_query(self.query)
-        if self.engine != "google" and self.fetcher != "direct":
-            raise ValueError("ScraperAPI is supported only for Google")
+        if self.fetcher is None:
+            self.fetcher = "scraperapi" if self.engine == "google" else "direct"
         return self
 
 
@@ -64,9 +65,9 @@ def search_page():
 
 @router.post("/api/search")
 def execute_search(request: SearchRequest):
-    """Run a single bounded page in FastAPI's sync worker, then read persisted rows."""
+    """Run a bounded number of pages in FastAPI's sync worker, then read persisted rows."""
     try:
-        summary = run_search(request.query, max_pages=1, engine=request.engine,
+        summary = run_search(request.query, max_pages=request.max_pages, engine=request.engine,
                              fetcher=request.fetcher, capture=False)
         warning = None
         try:
@@ -76,7 +77,7 @@ def execute_search(request: SearchRequest):
             directory.mkdir(parents=True, exist_ok=True)
             # Only non-secret provenance is saved, not keys or configuration dumps.
             with (directory / "web_request.json").open("x", encoding="utf-8") as output:
-                json.dump({"fetcher": request.fetcher}, output)
+                json.dump({"fetcher": request.fetcher, "max_pages": request.max_pages, "pages": summary.get("pages")}, output)
         except OSError:
             warning = "Search saved; fetcher history metadata could not be saved"
         data = read_run(summary["run_id"])

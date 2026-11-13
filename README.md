@@ -6,6 +6,174 @@ and DuckDuckGo through one command-line HTML → extraction → URL cleaning →
 and `WebSearch_Google_Python_Script.py` are preserved. FastAPI still provides only
 `/`, `/health`, and `/db-health`; no search API or GUI is included.
 
+## Structured Google search — current primary retrieval
+
+Google now defaults in the GUI to **ScraperAPI JSON**, using Python `requests` and
+`https://api.scraperapi.com/structured/google/search`. The existing `SCRAPER_API_KEY`
+is read from `.env`; there is no new credential file or key in source control.
+The GUI design is retained, with a **Page limit** selector (1–5, default 1). Each
+page spends provider credits; no automatic retries or additional fallback requests occur.
+The interface remains at `http://127.0.0.1:8765/search`.
+
+```sh
+source .venv/bin/activate
+python -m pip install -r requirements.txt
+python -m uvicorn main:app --host 127.0.0.1 --port 8765
+# CLI, with explicit paid retrieval and a deliberate five-page budget:
+python run_search.py "childhood cancer early diagnosis methods" --engine google --fetcher scraperapi --max-pages 5
+python -m pytest -q
+```
+
+The CLI's default Google fetcher is now `scraperapi` when SEARCH_FETCHER is absent;
+an existing explicit SEARCH_FETCHER or CLI `--fetcher direct` choice is honored.
+The web's defaults are Google/structured ScraperAPI, independent of that CLI setting.
+Changing the GUI engine sets its primary retrieval choice visibly: structured JSON
+for Google, direct HTTP for Bing/DuckDuckGo. The paid selector remains clearly labeled.
+Direct Google HTML is retained only as an explicitly selectable legacy diagnostic path.
+Other engines and existing capture/OCR code are preserved; this Google path never
+launches a browser, scrapes HTML, rewrites queries, or applies relevance heuristics.
+
+### Data flow and exact values
+
+`google_search.fetch_results` sends the **exact query entered** as the `query`
+parameter, plus `api_key` and `start`, through `requests.get` with connection/read
+timeouts of 10/60 seconds. HTTP errors, timeouts, invalid JSON and missing result
+lists produce safe errors rather than dumping request URLs or provider error bodies.
+`requests` is the only new dependency for this change; it is the requested HTTP/JSON
+client. Other engine transports retain their existing HTTP library.
+
+`parse_organic_results` maps only `organic_results`:
+
+| Provider field | Existing observation/database field |
+| --- | --- |
+| `title` | `title` |
+| `snippet` | `snippet` |
+| `link` | `original_url` and, if valid HTTP(S), the exact same `normalized_url` |
+| `position` | `result_rank`, unchanged (including across pages) |
+| Membership in `organic_results` | `is_ad=False` |
+
+Missing optional text/position values remain NULL; missing URLs or invalid field types
+fail that page clearly. Ads, related questions, and shopping sections are not imported
+as organic rows. Raw count therefore means the returned organic observations, not
+Google's estimated total matches or all SERP placements.
+
+The existing `run_search` workflow handles query/run creation, extraction, duplicate
+flags, commits/rollbacks, counts, and MySQL readback. For structured Google only,
+`clean_results(..., preserve_urls=True)` validates HTTP(S) syntax but does **not**
+unwrap redirects, remove tracking parameters, change host/path case, follow links,
+or rewrite supplied URLs. Duplicate detection uses **exact supplied URL equality**
+across pages. Distinct tracking URLs may still point to the same underlying destination;
+resolving that is intentionally deferred. Existing HTML-engine normalization remains
+unchanged. The GUI shows the preserved URLs and returned positions.
+
+### Pagination and limits
+
+Requests use documented `start` offsets **0, 10, 20, 30, 40**, bounded by the selected
+1–5 page limit. The provider's default Google offset step is ten; the number of
+organic observations returned can be smaller. A declared empty next-page URL stops
+pagination; absent pagination metadata permits advancing within the explicit limit.
+The workflow also stops on empty organic results, no new unique URLs on a subsequent
+page, 50 valid unique URLs, or a request/parser failure. It never follows provider
+pagination URLs, which can include signed metadata or keys. Earlier page observations
+remain persisted if a later page fails, with the run marked failed and actual counts.
+
+The web API now accepts `{query, engine, fetcher, max_pages}`; page limits outside
+1–5 are rejected. A sync worker executes the bounded workflow. The browser wait budget
+scales with the selected page limit; aborting the client wait does not cancel a Python
+operation, so consult saved history before retrying. The page limit and parsed page
+count are recorded with the non-secret fetcher sidecar for new web runs.
+Local `page_<n>.json` artifacts contain only mapped organic observations, not full
+provider metadata, credentials, or pagination URLs. No database migration is needed.
+
+Pagination and response fields follow the
+[official structured Google documentation](https://docs.scraperapi.com/structured-data-endpoints/search-and-insights/google/google-serp-api).
+
+### Actual verification
+
+Exactly **one paid structured Google request** was made, with `start=0`, GUI page
+limit 1 and the unchanged query `childhood cancer early diagnosis methods`.
+No paid Bing/DuckDuckGo requests or extra live pagination requests were made.
+
+- MySQL run **12**, engine `google`, fetcher `scraperapi`, status `completed`.
+- Raw organic observations **9**, ads **0**, duplicates **0**, final valid unique **9**.
+- First returned titles included “Helping GPs to diagnose children's cancer - PMC”,
+  “How Childhood Cancer Is Diagnosed”, and “The Importance of Early Detection in
+  Childhood Cancer ...”. Titles are reported as supplied, without a relevance score.
+- Browser verification exercised the real GUI → existing ETL → requests/JSON → MySQL
+  → displayed results flow. Stored URLs and positions matched the mapped JSON values;
+  the exact query remained unchanged. No JavaScript errors or mobile horizontal overflow.
+- Saved local evidence: `artifacts/run_12/page_1.json`,
+  `artifacts/structured_google_verification.json`, `artifacts/structured_google_web.png`.
+- **207 automated tests passed**, including mocked JSON, exact query forwarding,
+  URL/position preservation, empty/error responses, page limits, offsets, duplicate
+  detection, the 50-result stop, provider-declared last page and partial-page failure.
+  One existing Starlette/httpx TestClient deprecation warning remains.
+
+**50 unique URLs have not been collected live.** Five-page/50-result behavior is
+mock-tested, not claimed as a live outcome. Previously prepared explicit HTML
+ScraperAPI adapters for Bing/DuckDuckGo remain available, with no automatic fallback;
+those paid engine paths were not live-verified in this change. Historical direct
+provider limitations and diagnostic findings below remain as evidence, not current
+claims about the new structured Google path.
+
+Workbench verification:
+
+```sql
+USE MY_CUSTOM_BOT;
+SELECT r.*, q.query_text FROM search_runs r
+JOIN search_queries q ON q.id=r.query_id WHERE r.id=12;
+SELECT title, snippet, original_url, normalized_url, result_rank, is_duplicate
+FROM search_results WHERE run_id=12 ORDER BY result_rank, id;
+```
+
+## Request-based retrieval follow-up
+
+Production retrieval/parsing code contains no hardcoded result rows or research-topic
+branches. Query examples live in documentation, the editable web default, and test
+fixtures; fixtures are never loaded by production search functions.
+
+Controlled direct-request diagnostics found:
+
+| Test | Actual outcome |
+| --- | --- |
+| Unprefixed Group B query, standard `+` spaces | HTTP 200, ten organic medical/cancer observations, including PAHO/ICCP/ACS. |
+| Same query, `%20` spaces | Same ten destinations; changing space encoding is not a fix. |
+| Morbidity query with curly quotes, straight quotes, no quotes, and `a)` prefix | HTTP 200 but general childhood references in each case. |
+| Bing RSS format, both affected topics | Same respective result sets; no retrieval-format improvement. RSS was tested diagnostically, not added to the app. |
+| Google direct HTTP | HTTP 200 JavaScript-required shell, no search observations. |
+| DuckDuckGo HTML direct | HTTP 202 human-verification challenge; no bypass or repeated challenge request. |
+
+The earlier two-query prefix comparison was an observation at that time, not proof
+that an assignment prefix is necessary or a general remedy. Saved run 9 and current
+live requests return medical results without `b)`. Provider-side query/result behavior
+remains inconsistent; no local parsing or quote/space encoding fault has been confirmed.
+No irrelevant observations were deleted, rewritten, or replaced with fixture data.
+Diagnostic comparison requests did not insert research data into MySQL.
+
+The existing explicitly selected ScraperAPI option is now supported for all three
+engines. `scraper_api.py` contains the shared, single-request paid HTML transport;
+engine modules construct their own target URLs and retain their existing parsers.
+Direct HTTP remains the initial web choice and the Bing/DuckDuckGo CLI default.
+Google's existing SEARCH_FETCHER configuration is preserved. Paid retrieval requires
+an explicit fetcher selection, a configured key, credits, and account access. No direct
+failure automatically invokes it. No result relevance or provider availability guarantee
+is inferred from a successful HTTP response.
+
+```sh
+python run_search.py "childhood cancer early diagnosis methods" --engine bing --fetcher scraperapi
+python run_search.py "childhood cancer early diagnosis methods" --engine google --fetcher scraperapi
+python run_search.py "childhood cancer early diagnosis methods" --engine duckduckgo --fetcher scraperapi
+python -m pytest -q
+```
+
+DuckDuckGo's paid path supports GET pagination only; an observed POST Next form fails
+clearly while retaining prior observations rather than silently changing its method.
+The web still requests one page. ScraperAPI account errors and unusable HTML are
+reported rather than substituted. Paid live verification requires explicit authorization;
+no paid calls were made during the direct diagnostics. Automated verification currently
+passes **181 tests**, including exact arbitrary-query forwarding, all engine/fetcher
+web combinations, secret redaction, and no automatic fallback.
+
 ## Milestone 05: functional web search interface
 
 Start the local application and open **http://127.0.0.1:8765/search**:
@@ -23,7 +191,7 @@ system, new dependency, database migration, or second search pipeline.
 The query is prefilled with `childhood cancer early diagnosis methods` and remains
 editable. Bing is the initial engine; Google and DuckDuckGo are selectable. Direct
 HTTP is always the web default, regardless of CLI environment configuration. ScraperAPI
-is labeled paid, available only for Google, and requires explicit selection. No engine
+is labeled paid and requires explicit selection for each supported engine. No engine
 or paid-service fallback occurs. Each submission processes just one page through
 `run_search.run_search` and reads the actual committed observations back from MySQL.
 The web route does not request screenshot capture; existing CLI `--capture` still works.
@@ -267,8 +435,8 @@ python -m pytest -q
 
 `--engine` defaults to `google`, preserving previous commands. Google retains
 `--fetcher direct|scraperapi` and `SEARCH_FETCHER` configuration. Bing and DuckDuckGo
-always default to direct, independently of Google's configured fetcher. Explicit
-`--fetcher scraperapi` with another engine is rejected before any database writes.
+default to direct, independently of Google's configured fetcher. The later request-based
+retrieval follow-up also supports explicitly selected ScraperAPI for these engines.
 There is no automatic fallback between engines or fetchers.
 
 ### New modules and shared workflow

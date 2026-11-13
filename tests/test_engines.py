@@ -154,7 +154,7 @@ def test_db_engine_is_parameterized():
     assert "%s" in cursor.execute.call_args.args[0]
 
 
-@pytest.mark.parametrize("engine,fetcher", [("unknown", None), ("bing", "scraperapi"), ("duckduckgo", "scraperapi")])
+@pytest.mark.parametrize("engine,fetcher", [("unknown", None), ("bing", "invalid"), ("duckduckgo", "invalid")])
 def test_unsupported_engine_fetcher_fails_before_writes(engine, fetcher):
     with pytest.raises(ValueError):
         run_search.run_search(QUERY, engine=engine, fetcher=fetcher)
@@ -214,3 +214,48 @@ def test_bing_shared_pipeline_pagination_and_dedup(monkeypatch, tmp_path):
     assert fetch.call_count == 2
     assert fetch.call_args_list[1].kwargs["start"] == 11
     assert len(save.call_args.args[2]) == 4
+
+
+@pytest.mark.parametrize('module,expected_host', [(bing_search,'www.bing.com'), (duckduckgo_search,'html.duckduckgo.com')])
+def test_explicit_paid_fetcher_preserves_arbitrary_query(monkeypatch, module, expected_host):
+    from urllib.parse import urlsplit, parse_qs
+    import config
+    query = 'Childhood cancer morbidity rate “ethnicity or race”'
+    monkeypatch.setattr(config,'get_scraper_config',lambda: {'api_key':'fixture-secret','base_url':'https://api.scraperapi.com'})
+    def response(url, **kwargs):
+        assert url=='https://api.scraperapi.com'
+        target=urlsplit(kwargs['params']['url'])
+        assert target.hostname==expected_host
+        assert parse_qs(target.query)['q']==[query]
+        assert kwargs['params']['api_key']=='fixture-secret'
+        return httpx.Response(200,text='<html>fixture-secret</html>')
+    monkeypatch.setattr(httpx,'get',response)
+    assert 'fixture-secret' not in module.fetch_scraper_html(query)
+
+
+def test_paid_ddg_does_not_silently_convert_post_pagination():
+    with pytest.raises(SearchError,match='POST pagination is not supported'):
+        duckduckgo_search.fetch_scraper_html(QUERY, {'method':'post','params':{'q':QUERY,'s':'30'}})
+
+
+@pytest.mark.parametrize('engine,module', [('bing',bing_search),('duckduckgo',duckduckgo_search)])
+def test_paid_selection_is_not_an_automatic_fallback(monkeypatch,tmp_path,engine,module):
+    import config
+    connection=MagicMock(); connection.__enter__.return_value=connection
+    monkeypatch.setattr(db,'get_connection',lambda:connection)
+    monkeypatch.setattr(db,'insert_search_query',lambda *args:10)
+    monkeypatch.setattr(db,'insert_search_run',lambda *args:20)
+    monkeypatch.setattr(db,'insert_search_results',MagicMock())
+    monkeypatch.setattr(db,'update_search_run',MagicMock())
+    monkeypatch.setattr(run_search,'get_scraper_config',lambda:{})
+    monkeypatch.setattr(run_search,'__file__',str(tmp_path/'run_search.py'))
+    direct=MagicMock(side_effect=SearchError('Direct blocked'))
+    paid=MagicMock(side_effect=SearchError('ScraperAPI returned HTTP 401'))
+    monkeypatch.setattr(module,'fetch_html',direct)
+    monkeypatch.setattr(module,'fetch_scraper_html',paid)
+    summary=run_search.run_search(QUERY,engine=engine)
+    assert summary['status']=='failed'
+    paid.assert_not_called()
+    summary=run_search.run_search(QUERY,engine=engine,fetcher='scraperapi')
+    assert summary['fetcher']=='scraperapi' and summary['status']=='failed'
+    assert paid.call_count==1 and direct.call_count==1

@@ -52,9 +52,9 @@ def get_scraper_config() -> dict[str, str]:
 
 
 def get_search_fetcher() -> str:
-    """Choose the configured fetcher, defaulting to direct HTTP without an API key."""
+    """Choose the configured fetcher, defaulting Google to structured ScraperAPI."""
     load_dotenv(Path(__file__).resolve().parent / ".env")
-    fetcher = os.getenv("SEARCH_FETCHER", "direct").strip().lower()
+    fetcher = os.getenv("SEARCH_FETCHER", "scraperapi").strip().lower()
     if fetcher not in {"direct", "scraperapi"}:
         raise ValueError("SEARCH_FETCHER must be direct or scraperapi")
     return fetcher

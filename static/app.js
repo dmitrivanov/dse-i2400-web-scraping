@@ -11,9 +11,9 @@ function message(text) {
   byId('message').textContent = text || '';
   byId('message').hidden = !text;
 }
-async function api(url, options = {}) {
+async function api(url, options = {}, timeoutMs = 90000) {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 90000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     const response = await fetch(url, {...options, signal: controller.signal});
     const data = await response.json();
@@ -29,7 +29,7 @@ async function api(url, options = {}) {
 }
 function organic(row) { return (row.is_ad === false || row.is_ad === 0) && !row.is_duplicate && Boolean(row.normalized_url); }
 function safeUrl(value) {
-  try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? url.href : null; }
+  try { const url = new URL(value); return ['http:', 'https:'].includes(url.protocol) && !url.username && !url.password ? value : null; }
   catch { return null; }
 }
 function renderResults() {
@@ -101,19 +101,20 @@ async function loadHistory(initial = false) {
 }
 function setBusy(value) {
   busy = value; byId('loading').hidden = !value;
-  for (const id of ['query', 'engine', 'fetcher', 'search-button', 'refresh-history']) byId(id).disabled = value;
+  for (const id of ['query', 'engine', 'fetcher', 'max-pages', 'search-button', 'refresh-history']) byId(id).disabled = value;
   document.querySelectorAll('.history-item').forEach(item => item.disabled = value);
 }
 byId('engine').addEventListener('change', () => {
-  const supported = byId('engine').value === 'google';
-  byId('fetcher').querySelector('[value="scraperapi"]').disabled = !supported;
-  if (!supported) byId('fetcher').value = 'direct';
+  const google = byId('engine').value === 'google';
+  byId('fetcher').value = google ? 'scraperapi' : 'direct';
+  byId('fetcher').querySelector('[value="scraperapi"]').textContent = google ? 'ScraperAPI JSON · paid' : 'ScraperAPI HTML · paid';
+  byId('fetcher').querySelector('[value="direct"]').textContent = google ? 'Direct HTTP · legacy Google HTML' : 'Direct HTTP';
 });
 byId('search-form').addEventListener('submit', async event => {
   event.preventDefault(); if (busy) return;
   setBusy(true); message('');
   try {
-    const data = await api('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:byId('query').value, engine:byId('engine').value, fetcher:byId('fetcher').value})});
+    const data = await api('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({query:byId('query').value, engine:byId('engine').value, fetcher:byId('fetcher').value, max_pages:Number(byId('max-pages').value)})}, Number(byId('max-pages').value) * 75000 + 15000);
     showRun(data);
   } catch (error) { message(error.message); }
   finally { await loadHistory(); setBusy(false); }

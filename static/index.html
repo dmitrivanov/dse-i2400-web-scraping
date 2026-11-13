@@ -14,14 +14,15 @@
       <label for="query">Search query</label>
       <textarea id="query" name="query" rows="2" maxlength="1000" required>childhood cancer early diagnosis methods</textarea>
       <div class="controls">
-        <div><label for="engine">Search engine</label><select id="engine"><option value="bing" selected>Bing</option><option value="google">Google</option><option value="duckduckgo">DuckDuckGo</option></select></div>
-        <div><label for="fetcher">Retrieval method</label><select id="fetcher"><option value="direct" selected>Direct HTTP</option><option value="scraperapi" disabled>ScraperAPI · paid</option></select></div>
+        <div><label for="engine">Search engine</label><select id="engine"><option value="bing">Bing</option><option value="google" selected>Google</option><option value="duckduckgo">DuckDuckGo</option></select></div>
+        <div><label for="fetcher">Retrieval method</label><select id="fetcher"><option value="direct">Direct HTTP · legacy Google HTML</option><option value="scraperapi" selected>ScraperAPI JSON · paid</option></select></div>
+        <div><label for="max-pages">Page limit</label><select id="max-pages"><option value="1" selected>1 page</option><option value="2">2 pages</option><option value="3">3 pages</option><option value="4">4 pages</option><option value="5">5 pages</option></select></div>
         <button id="search-button" type="submit">Search <span aria-hidden="true">↗</span></button>
       </div>
-      <p class="hint" id="fetcher-note">One page per search. ScraperAPI is paid and available only when explicitly selected for Google.</p>
+      <p class="hint" id="fetcher-note">Google uses structured ScraperAPI JSON. Each page uses paid credits; one page is selected by default. Stops at 50 unique organic results or the selected page limit.</p>
       <p class="hint">Use at least five meaningful words. Exact wording can change engine results; queries are preserved as entered.</p>
     </form>
-    <div id="loading" class="loading" role="status" hidden><span class="spinner"></span>Searching and saving observations… This may take up to a minute.</div>
+    <div id="loading" class="loading" role="status" hidden><span class="spinner"></span>Searching and saving observations… This may take up to a minute per page.</div>
   </section>
   <div id="message" class="message" role="status" aria-live="polite" hidden></div>
   <div class="workspace">
