@@ -1,0 +1,65 @@
+"""Conservative URL normalization and per-run duplicate identification."""
+import re
+
+from urllib.parse import parse_qs, unquote_plus, urljoin, urlsplit, urlunsplit
+
+TRACKING = {"gclid", "dclid", "fbclid", "msclkid"}
+
+
+def normalize_url(original: str) -> str | None:
+    """Return a safe HTTP(S) URL, or None; retain path, fragment and query order."""
+    if not original or any(ord(char) <= 32 or ord(char) == 127 for char in original):
+        return None
+    if not (original.lower().startswith(("http://", "https://"))
+            or original.startswith("//") or original.startswith("/url?")):
+        return None
+    try:
+        url = urljoin("https://www.google.com", original)
+        parts = urlsplit(url)
+        if parts.hostname in {"google.com", "www.google.com"} and parts.path == "/url":
+            values = parse_qs(parts.query)
+            url = values.get("q", values.get("url", [""]))[0]
+            parts = urlsplit(url)
+        if parts.scheme.lower() not in {"http", "https"} or not parts.hostname:
+            return None
+        if parts.hostname in {"google.com", "www.google.com"} and parts.path in {"/search", "/preferences", "/sorry/"}:
+            return None
+        if parts.username or parts.password or "\\" in url:
+            return None
+        host = parts.hostname.encode("idna").decode("ascii").lower()
+        if not re.fullmatch(r"[a-z0-9.:-]+", host):
+            return None
+        if ":" in host:
+            host = f"[{host}]"
+        port = parts.port
+        if port and (parts.scheme.lower(), port) not in {("https", 443), ("http", 80)}:
+            host += f":{port}"
+        # Retain original encoding/order of every non-tracking query component.
+        query = "&".join(part for part in parts.query.split("&")
+                         if unquote_plus(part.split("=", 1)[0]).lower() not in TRACKING
+                         and not unquote_plus(part.split("=", 1)[0]).lower().startswith("utm_"))
+        return urlunsplit((parts.scheme.lower(), host, parts.path or "/", query, parts.fragment))
+    except (ValueError, UnicodeError):
+        return None
+
+
+def clean_results(results: list[dict]) -> tuple[list[dict], dict[str, int]]:
+    """Choose one representative per valid URL, preferring a known organic row."""
+    cleaned = [dict(row, normalized_url=normalize_url(row["original_url"])) for row in results]
+    winners = {}
+    for index, row in enumerate(cleaned):
+        url = row["normalized_url"]
+        if url is None:
+            continue
+        previous = winners.get(url)
+        if previous is None or (row["is_ad"] is False and cleaned[previous]["is_ad"] is not False):
+            winners[url] = index
+    counts = {"raw_count": len(cleaned), "ad_count": 0, "duplicate_count": 0, "final_count": 0}
+    for index, row in enumerate(cleaned):
+        url = row["normalized_url"]
+        row["is_duplicate"] = bool(url and winners[url] != index)
+        counts["ad_count"] += row["is_ad"] is True
+        counts["duplicate_count"] += row["is_duplicate"]
+        if url and row["is_ad"] is False and not row["is_duplicate"]:
+            counts["final_count"] += 1
+    return cleaned, counts

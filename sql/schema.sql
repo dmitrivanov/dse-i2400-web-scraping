@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS search_results (
     normalized_url TEXT NULL,
     snippet TEXT NULL,
     result_rank INT NULL,
-    is_ad BOOLEAN NOT NULL DEFAULT FALSE,
+    is_ad BOOLEAN NULL DEFAULT NULL,
     is_duplicate BOOLEAN NOT NULL DEFAULT FALSE,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),

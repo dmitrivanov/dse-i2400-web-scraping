@@ -28,3 +28,33 @@ def get_database_config() -> dict[str, str | int]:
         "user": settings["DB_USER"], "password": password,
         "database": settings["DB_NAME"],
     }
+
+
+def get_scraper_config() -> dict[str, str]:
+    """Read credentials for the standard HTTPS HTML endpoint only."""
+    from urllib.parse import urlsplit
+
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+    key = os.getenv("SCRAPER_API_KEY", "").strip()
+    if not key:
+        raise ValueError("SCRAPER_API_KEY is required")
+    base = os.getenv("SCRAPER_API_BASE_URL", "https://api.scraperapi.com").strip()
+    try:
+        parts = urlsplit(base)
+        port = parts.port
+    except ValueError:
+        raise ValueError("SCRAPER_API_BASE_URL must be the standard HTTPS ScraperAPI endpoint") from None
+    if (parts.scheme != "https" or parts.hostname != "api.scraperapi.com"
+            or parts.path not in ("", "/") or parts.query or parts.fragment
+            or parts.username or parts.password or port not in (None, 443)):
+        raise ValueError("SCRAPER_API_BASE_URL must be the standard HTTPS ScraperAPI endpoint")
+    return {"api_key": key, "base_url": base}
+
+
+def get_search_fetcher() -> str:
+    """Choose the configured fetcher, defaulting to direct HTTP without an API key."""
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+    fetcher = os.getenv("SEARCH_FETCHER", "direct").strip().lower()
+    if fetcher not in {"direct", "scraperapi"}:
+        raise ValueError("SEARCH_FETCHER must be direct or scraperapi")
+    return fetcher

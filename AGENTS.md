@@ -68,3 +68,26 @@ When introducing a new library, design pattern, table, or module, explain:
 3. How it interacts with the other components.
 4. How to verify that it works.
 
+## Git and milestone completion policy
+
+- Work on the `main` branch.
+- At the beginning of each milestone, inspect the current Git branch and working-tree status.
+- Preserve existing user changes and never discard or overwrite uncommitted work.
+- Implement only the requested milestone.
+- Run relevant automated tests before committing.
+- Commit completed milestones automatically to local `main` when acceptance criteria are satisfied.
+- Use descriptive commit messages, for example: `Milestone 02: Direct Google search and ETL`.
+- Stage only files relevant to the milestone, not indiscriminately every file in the project.
+- Never commit `.env`, API keys, credentials, temporary files, or generated artifacts containing sensitive information.
+- Do not create commits when tests fail or critical milestone requirements remain unverified.
+- Do not automatically push to GitHub. Local commits and remote pushes are separate operations.
+- Never force push or reset Git history.
+- Report the commit hash and test results after each milestone.
+- If the milestone is incomplete because of an external service failure, report the blocker and leave changes uncommitted unless explicitly instructed otherwise.
+
+## Assigned research topic
+
+- Group B: `childhood cancer early diagnosis methods` is the default example query in documentation and demonstrations.
+- Support arbitrary valid user queries; do not hardcode the assigned topic in retrieval, ETL, or database modules.
+- Collect data for other assigned groups only when explicitly requested.
+- Preserve query-to-result foreign-key relationships and never fabricate research data.

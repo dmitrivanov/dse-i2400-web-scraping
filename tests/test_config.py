@@ -39,3 +39,24 @@ def test_environment_overrides_dotenv(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "load_dotenv", lambda *args: load_dotenv(env_file))
     assert config.get_database_config()["host"] == "localhost"
     assert config.get_database_config()["port"] == 3307
+
+
+def test_scraper_configuration(monkeypatch):
+    monkeypatch.setenv("SCRAPER_API_KEY", "fixture-key")
+    monkeypatch.setenv("SCRAPER_API_BASE_URL", "https://api.scraperapi.com")
+    assert config.get_scraper_config()["base_url"] == "https://api.scraperapi.com"
+
+
+@pytest.mark.parametrize("url", ["http://api.scraperapi.com", "https://other.example", "https://api.scraperapi.com/structured", "https://api.scraperapi.com:secret"])
+def test_reject_scraper_endpoint(monkeypatch, url):
+    monkeypatch.setenv("SCRAPER_API_KEY", "fixture-key")
+    monkeypatch.setenv("SCRAPER_API_BASE_URL", url)
+    with pytest.raises(ValueError) as error:
+        config.get_scraper_config()
+    assert "secret" not in str(error.value)
+
+
+def test_missing_scraper_key(monkeypatch):
+    monkeypatch.delenv("SCRAPER_API_KEY", raising=False)
+    with pytest.raises(ValueError, match="SCRAPER_API_KEY"):
+        config.get_scraper_config()
