@@ -6,6 +6,128 @@ and DuckDuckGo through one command-line HTML → extraction → URL cleaning →
 and `WebSearch_Google_Python_Script.py` are preserved. FastAPI still provides only
 `/`, `/health`, and `/db-health`; no search API or GUI is included.
 
+## Milestone 05: functional web search interface
+
+Start the local application and open **http://127.0.0.1:8765/search**:
+
+```sh
+cd "/Users/dmitrii/Documents/CCNY 2026/Data Engineering/Web Scraping Project"
+source .venv/bin/activate
+python -m uvicorn main:app --host 127.0.0.1 --port 8765
+```
+
+The page at `/search` is the responsive HTML/CSS/JavaScript interface. Existing `/`,
+`/health` and `/db-health` JSON endpoints are preserved. There is no frontend build
+system, new dependency, database migration, or second search pipeline.
+
+The query is prefilled with `childhood cancer early diagnosis methods` and remains
+editable. Bing is the initial engine; Google and DuckDuckGo are selectable. Direct
+HTTP is always the web default, regardless of CLI environment configuration. ScraperAPI
+is labeled paid, available only for Google, and requires explicit selection. No engine
+or paid-service fallback occurs. Each submission processes just one page through
+`run_search.run_search` and reads the actual committed observations back from MySQL.
+The web route does not request screenshot capture; existing CLI `--capture` still works.
+
+Results show title, destination URL, source snippet, engine, rank, ad/organic/unknown
+placement and duplicate badges. Invalid URLs are marked and not linked. All observations
+are shown by default; **Unique organic only** requires a valid normalized URL, known
+organic placement and no duplicate flag. Organic placement does not guarantee relevance.
+The diagnostic panel reports the original query, engine, fetcher, run ID/status, four
+ETL counters and safe errors. Saved failed/empty runs display a warning instead of
+invented results. Loading state prevents accidental duplicate submissions.
+
+Recent history comes from the latest 20 MySQL runs. Selecting one uses a database read,
+not a provider request, and does not replace the editable default query with a hidden
+variation. Run 4 demonstrates the explicit prefixed query from Task 04A; no prefix is
+added automatically. The original query/run/results foreign keys remain intact.
+
+### Files and endpoints
+
+- `static/index.html`, `styles.css`, `app.js`: accessible form labels, a responsive
+  layout, run diagnostics, result cards, client-side filtering, and recent history.
+  Dynamic values use DOM `textContent`, not HTML interpolation. Only validated HTTP(S)
+  destinations become result links.
+- `web_search.py`: explicit FastAPI routes and a small validated request model. The
+  model uses Pydantic already supplied by FastAPI; no additional library is required.
+- `db.py`: `get_recent_search_runs`, `get_search_run`, `get_capture_artifact` perform
+  direct parameterized SQL reads and close connections/cursors. The detailed read
+  returns the run and its results/artifacts from one connection snapshot.
+- `main.py`: registers the web routes and mounts only the static source directory.
+- `tests/test_web.py`: mocked ETL/MySQL tests for validation, engine/fetcher selection,
+  database readback, history, empty/failed runs and safe artifact access. These tests
+  issue no real provider requests or database writes.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /search` | HTML interface. |
+| `POST /api/search` | Validated JSON `{query, engine, fetcher}`; run one page, persist via existing ETL, read results back. |
+| `GET /api/runs` | Latest 20 runs from MySQL. |
+| `GET /api/runs/{run_id}` | Stored diagnostics, observations and artifact links; no external search. |
+| `GET /api/artifacts/{artifact_id}/screenshot` | Database-selected PNG inside the artifacts root. |
+| `GET /api/artifacts/{artifact_id}/ocr` | Database-selected UTF-8 OCR text inside the artifacts root. |
+
+The existing schema does not store fetcher provenance. New web runs record the
+non-secret fetcher choice in `artifacts/run_<id>/web_request.json`; reopen reads that
+sidecar. Older CLI runs honestly display **Not recorded for this run**, rather than
+inferring a fetcher. If sidecar storage fails, the completed search remains saved and
+the response reports a warning. Removing/moving local sidecars loses only that metadata.
+
+Artifact routes accept an ID and a fixed kind, never arbitrary user paths. Paths are
+resolved against the controlled artifacts directory; paths outside it, traversal,
+escaping symlinks, missing files and incorrect extensions return 404. Only PNG and
+plain-text OCR are served, with `nosniff`; HTML/sidecars are not exposed. API artifact
+metadata contains links, not absolute local filesystem paths. This is a local assignment
+app without authentication; bind it to 127.0.0.1 as shown, not a public host.
+
+Synchronous FastAPI handlers execute in its worker thread pool. Web submissions are
+limited to one provider page, with existing upstream connection/operation timeouts,
+no retry, no capture, and no background task infrastructure. The client stops waiting
+after 90 seconds; this does not cancel a running Python operation, so refresh history
+before retrying. Provider failures saved by ETL are returned with their failed run and
+actual counters. Configuration/database failures use safe HTTP errors, not raw exceptions.
+
+### Verification performed
+
+**174 automated tests passed**, preserving all prior 146; one existing Starlette/httpx
+TestClient deprecation warning remains. Command:
+
+```sh
+python -m pytest -q
+```
+
+Actual Chromium browser verification against the running FastAPI app and real MySQL:
+
+- Interface loaded with the exact default Group B query and no JavaScript errors.
+- Reopened run 1: 20 real observations; unique-organic filter showed 10.
+- Reopened run 3: actual titles/URLs/snippets and correct counters; screenshot and
+  OCR links both returned 200 and their stored file contents.
+- Reopened failed run 2: HTTP 202/challenge warning, zero results, no provider request.
+- Submitted **exactly one new live search** through the actual form, explicitly typing
+  `b) Childhood cancer early diagnosis methods` with Bing/direct. MySQL run **4**
+  completed with raw **10**, ads **0**, duplicates **0**, unique organic **10**.
+  PAHO, ICCP and Wiley titles/snippets/destinations were visible in the interface.
+- Reopened run 4: 10 stored results and persisted `direct` fetcher provenance.
+- Desktop (1440px) and mobile (390px) layouts verified; no horizontal overflow.
+
+Local ignored screenshots: `artifacts/web_verified_desktop.png` and
+`artifacts/web_verified_mobile.png`. This browser verification is separate from the
+mocked unit tests. No additional engine searches were performed. The 50-unique-result
+requirement is still not claimed; web submissions intentionally retrieve only one page.
+Google's JavaScript shell, DuckDuckGo's verification challenge, Bing query sensitivity,
+and imperfect OCR remain the limitations documented in earlier milestones.
+
+Workbench verification for the actual new web run:
+
+```sql
+USE MY_CUSTOM_BOT;
+SELECT r.*, q.query_text
+FROM search_runs r JOIN search_queries q ON q.id=r.query_id WHERE r.id=4;
+SELECT title, original_url, normalized_url, snippet, result_rank, is_ad, is_duplicate
+FROM search_results WHERE run_id=4 ORDER BY result_rank, id;
+SELECT id, run_id, screenshot_path, ocr_text_path
+FROM capture_artifacts WHERE run_id=3;
+```
+
 ## Task 04A: Bing query discrepancy
 
 A controlled two-request comparison preserved the complete queries end to end.

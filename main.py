@@ -1,10 +1,16 @@
-"""JSON endpoints for the MY_CUSTOM_BOT foundation milestone."""
+"""FastAPI application, health checks, and the local search interface."""
+from pathlib import Path
+
 from fastapi import FastAPI, HTTPException
+from fastapi.staticfiles import StaticFiles
+from web_search import router
 from mysql.connector import Error
 
 import db
 
 app = FastAPI(title="MY_CUSTOM_BOT")
+app.include_router(router)
+app.mount("/static", StaticFiles(directory=Path(__file__).resolve().parent / "static"), name="static")
 
 
 @app.get("/")

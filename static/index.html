@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MY_CUSTOM_BOT · Search workspace</title>
+  <link rel="stylesheet" href="/static/styles.css"><script src="/static/app.js" defer></script>
+</head>
+<body>
+<header class="header"><a class="brand" href="/search"><span class="mark">MB</span><span>MY_CUSTOM_BOT<small>CCNY · DSE I2400</small></span></a><span class="header-note">Search. Inspect. Understand.</span></header>
+<main>
+  <section class="intro"><p class="eyebrow">RESEARCH WORKSPACE</p><h1>Follow the evidence.</h1><p>Run a search, inspect every observation, and trace the results back to their source.</p></section>
+  <section class="search-panel" aria-label="Search controls">
+    <form id="search-form">
+      <label for="query">Search query</label>
+      <textarea id="query" name="query" rows="2" maxlength="1000" required>childhood cancer early diagnosis methods</textarea>
+      <div class="controls">
+        <div><label for="engine">Search engine</label><select id="engine"><option value="bing" selected>Bing</option><option value="google">Google</option><option value="duckduckgo">DuckDuckGo</option></select></div>
+        <div><label for="fetcher">Retrieval method</label><select id="fetcher"><option value="direct" selected>Direct HTTP</option><option value="scraperapi" disabled>ScraperAPI · paid</option></select></div>
+        <button id="search-button" type="submit">Search <span aria-hidden="true">↗</span></button>
+      </div>
+      <p class="hint" id="fetcher-note">One page per search. ScraperAPI is paid and available only when explicitly selected for Google.</p>
+      <p class="hint">Use at least five meaningful words. Exact wording can change engine results; queries are preserved as entered.</p>
+    </form>
+    <div id="loading" class="loading" role="status" hidden><span class="spinner"></span>Searching and saving observations… This may take up to a minute.</div>
+  </section>
+  <div id="message" class="message" role="status" aria-live="polite" hidden></div>
+  <div class="workspace">
+    <section class="results-area" aria-label="Search results">
+      <section class="diagnostics" aria-labelledby="diagnostics-heading">
+        <div class="section-heading"><h2 id="diagnostics-heading">Run diagnostics</h2><span id="run-status" class="badge">No run selected</span></div>
+        <dl id="diagnostic-values"><div><dt>Query</dt><dd>Choose a previous run or start a search.</dd></div></dl>
+        <div id="artifact-links" class="artifact-links"></div>
+      </section>
+      <div class="section-heading results-heading"><div><p class="eyebrow">EXTRACTED OBSERVATIONS</p><h2>Search results <span id="result-count" class="muted"></span></h2></div><label class="filter"><input id="organic-only" type="checkbox"> Unique organic only</label></div>
+      <p id="empty-state" class="empty-state">Your results will appear here. Recent searches reopen from MySQL without another external request.</p>
+      <div id="results"></div>
+    </section>
+    <aside class="history" aria-labelledby="history-heading"><div class="section-heading"><h2 id="history-heading">Recent searches</h2><button id="refresh-history" class="text-button" type="button">Refresh</button></div><p class="hint">Saved runs · no new provider requests</p><p id="history-status" class="hint" role="status"></p><div id="history-list"></div><div class="history-footnote"><strong>Transparent by design</strong><p>Ads, duplicates, and unknown placements remain visible. Organic placement does not establish source relevance or accuracy.</p></div></aside>
+  </div>
+</main>
+<footer>MY_CUSTOM_BOT <span>Advanced Web Scraping · Group B</span></footer>
+</body></html>

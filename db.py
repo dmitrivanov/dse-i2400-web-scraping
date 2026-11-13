@@ -80,3 +80,35 @@ def insert_capture_artifact(connection: MySQLConnection, run_id: int,
             VALUES (%s, %s, %s)""", (run_id, screenshot_path, ocr_text_path),
         )
         return cursor.lastrowid
+
+
+def get_recent_search_runs() -> list[dict]:
+    """Read the latest 20 runs, including their original query text."""
+    with get_connection() as connection:
+        with connection.cursor(dictionary=True) as cursor:
+            cursor.execute("""SELECT r.*, q.query_text FROM search_runs r
+                JOIN search_queries q ON q.id=r.query_id ORDER BY r.id DESC LIMIT 20""")
+            return cursor.fetchall()
+
+
+def get_search_run(run_id: int) -> dict | None:
+    """Read one run, its raw observations, and capture metadata in one snapshot."""
+    with get_connection() as connection:
+        with connection.cursor(dictionary=True) as cursor:
+            cursor.execute("""SELECT r.*, q.query_text FROM search_runs r
+                JOIN search_queries q ON q.id=r.query_id WHERE r.id=%s""", (run_id,))
+            run = cursor.fetchone()
+            if run is None:
+                return None
+            cursor.execute("SELECT * FROM search_results WHERE run_id=%s ORDER BY result_rank, id", (run_id,))
+            results = cursor.fetchall()
+            cursor.execute("SELECT * FROM capture_artifacts WHERE run_id=%s ORDER BY id", (run_id,))
+            return {"run": run, "results": results, "artifacts": cursor.fetchall()}
+
+
+def get_capture_artifact(artifact_id: int) -> dict | None:
+    """Look up artifact paths by database ID, never by a client-provided path."""
+    with get_connection() as connection:
+        with connection.cursor(dictionary=True) as cursor:
+            cursor.execute("SELECT * FROM capture_artifacts WHERE id=%s", (artifact_id,))
+            return cursor.fetchone()
