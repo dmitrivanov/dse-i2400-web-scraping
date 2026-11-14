@@ -97,3 +97,16 @@ def test_ai_source_summaries_only_use_grounded_associations(monkeypatch):
     result=ai_routes.read_packet(1)
     assert result['sources'][0]['summary']=='Actual source-associated claim'
     assert result['sources'][1]['summary'] is None
+
+
+def test_yahoo_title_links_without_optional_tracking_attribute():
+    """Observed HTTP200 variant has genuine titles but no data-matarget attribute."""
+    html=Path('tests/fixtures/yahoo_without_tracking_attribute.html').read_text()
+    html+='<nav><a href="https://example.org/navigation"><h3>Navigation</h3></a></nav>'
+    html+='<aside class="ad"><div class="compTitle"><a href="https://example.org/ad"><h3>Advertisement</h3></a></div></aside>'
+    rows,_=engine_search.parse_page('yahoo',html,'Childhood cancer early diagnosis methods')
+    assert len(rows)==7
+    assert rows[0]['title']=='Early Diagnosis of Childhood Cancer Manual - ICCP Portal'
+    assert rows[0]['original_url']=='https://www.iccp-portal.org/resources/early-diagnosis-childhood-cancer-manual'
+    assert all(row['snippet'] and not row['is_ad'] for row in rows)
+    assert not any(row['title'] in {'Navigation','Advertisement'} for row in rows)

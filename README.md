@@ -481,3 +481,16 @@ Verification for this refinement: **252 tests passed** (two dependency deprecati
 warnings), plus Web/Library/mobile checks, Gemini source-first checks, and a regression
 covering pending AI requests without Library navigation. Exactly three authorized
 ScraperAPI requests were used; no new Gemini request was made.
+
+### Yahoo result-layout fix
+
+A single authorized diagnostic request reproduced HTTP200 genuine results for
+`Childhood cancer early diagnosis methods`, but the seven organic cards lacked the
+optional `data-matarget="algo"` tracking attribute. Yahoo extraction now uses the
+`.compTitle` heading link inside each existing `#web .algo` card. The parser does not
+scan global links or rewrite the query. Both observed Yahoo layouts have regression
+fixtures; navigation and advertisements outside organic cards are excluded.
+
+The same saved diagnostic HTML passed through ETL into completed MySQL run25 with
+seven unique URLs, without an additional paid request. Failed runs21/24 were preserved.
+Full verification: **253 tests passed** (two dependency deprecation warnings).

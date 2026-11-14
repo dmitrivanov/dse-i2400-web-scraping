@@ -34,7 +34,7 @@ def parse_page(engine: str, html: str, query: str, start: int = 0) -> tuple[list
     if soup.select_one('#b_captcha, #captcha, .anomaly-modal, .g-recaptcha, form[action*="challenge"]'):
         raise SearchError(f'{engine.title()} returned a verification challenge; stopped')
     selectors={'bing':('#b_results li.b_algo','h2 a[href]','.b_caption p'),
-               'yahoo':('#web .algo','a[data-matarget="algo"]','div.compText p'),
+               'yahoo':('#web .algo','.compTitle a[href]:has(h3)','div.compText p'),
                'duckduckgo':('.result.results_links:not(.result--ad)','a.result__a[href]','.result__snippet')}
     cards,link_selector,snippet_selector=selectors[engine]
     rows=[]
