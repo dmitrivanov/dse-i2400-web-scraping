@@ -244,3 +244,29 @@ Remaining major assignment gaps: no verified 50 distinct publisher destinations;
 execution, summarization or AI mode/output links; no authentic Google screenshot/OCR;
 limited verified additional-engine coverage and no dedicated multi-engine batch command.
 The requested new `/v1` route still needs an explicitly authorized future live check.
+
+## Milestone 07 — minimalist interface
+
+Open http://127.0.0.1:8765/search. The monochrome home screen has a centered
+composer and Internet Search / AI Search toggle. AI Search is unavailable; it makes
+no requests and shows no invented output. Normal search remains the default.
+Select Collect 50 and a total page budget deliberately; new pages still require
+explicit paid confirmation. Refresh and Collect More retain their existing behavior.
+
+Open History to view saved MySQL searches, their mode, date and stored count.
+Reopening a run only reads saved data. Results form a compact list; opaque Google
+redirects are clearly labeled as unverified destinations. Details & evidence contains
+provider, timestamp, counts, collection information and existing screenshot/OCR links.
+Capture remains a separate explicit action, never automatic. Missing evidence files
+retain the existing clear API errors. No provider, ETL, database or capture code changed.
+
+Verification (with the local server running for the browser command):
+
+```sh
+.venv/bin/python -m pytest -q
+PLAYWRIGHT_BROWSERS_PATH="$PWD/.venv/playwright-browsers" .venv/bin/python tests/verify_interface.py
+```
+
+The browser check reads actual saved run 12 and Bing evidence, tests desktop/mobile,
+mode switching and saved history, and mocks submissions including 50 result cards,
+loading and validation errors. It never purchases pages or initiates capture.

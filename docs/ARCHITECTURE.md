@@ -183,3 +183,20 @@ If a provider cannot be authorized programmatically, seek instructor approval fo
 manual export/import of actual labeled outputs with timestamps/source provenance.
 Do not automate consumer login/challenge workflows or call another model “Copilot”.
 AI readiness documentation does not establish that any credential/license is available.
+
+## Milestone 07 presentation layer
+
+The existing three static files now provide a monochrome centered composer,
+Internet/AI presentation toggle, collapsible history and compact results. The home
+screen does not automatically open a run. History uses only GET /api/runs and
+GET /api/runs/{id}; active saved queries populate the composer without rewriting.
+Details contains metadata and ID-based screenshot/OCR links. Mobile history is an
+overlay with Escape dismissal and keyboard focus containment. Reduced motion is
+respected. No frontend framework, dependency, API/schema or collection behavior changed.
+
+AI sections are empty hidden presentation containers, shown only as an honest
+unavailable state; no AI endpoints are called. Search still uses the existing
+cache-first POST contract, explicit paid confirmation, per-page progress polling,
+and independent capture action. tests/verify_interface.py exercises the real local
+frontend with saved MySQL reads and intercepted search POSTs, including 50-card
+rendering. This is a browser smoke check, not new provider-result verification.

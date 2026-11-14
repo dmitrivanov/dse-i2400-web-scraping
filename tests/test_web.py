@@ -38,7 +38,10 @@ def test_interface_and_static_assets():
     response = client.get('/search')
     assert response.status_code == 200 and 'text/html' in response.headers['content-type']
     assert QUERY in response.text
-    assert 'Google · ScraperAPI JSON' in response.text
+    assert 'Internet Search' in response.text and 'AI Search' in response.text
+    assert 'Details &amp; evidence' in response.text
+    assert 'CCNY' not in response.text
+    assert 'Follow the evidence' not in response.text
     assert client.get('/static/app.js').status_code == 200
     assert client.get('/static/styles.css').status_code == 200
 

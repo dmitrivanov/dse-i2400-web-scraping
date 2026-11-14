@@ -1,6 +1,7 @@
 const byId = id => document.getElementById(id);
 let current = null;
 let busy = false;
+let searchType = 'internet';
 function node(tag, text, className) {
   const element = document.createElement(tag);
   if (text !== undefined && text !== null) element.textContent = text;
@@ -42,39 +43,37 @@ function renderResults() {
   byId('empty-state').textContent = current.results.length ? 'No observations match this filter.' : 'No observations were saved for this run. See its diagnostics above.';
   for (const row of rows) {
     const article = node('article', null, 'result');
-    const top = node('div', null, 'result-top');
-    top.append(node('span', `${current.run.engine.toUpperCase()} · PAGE ${row.page_number ?? 'not recorded'} · RANK ${row.result_rank ?? '—'}`));
-    const isAd = row.is_ad === true || row.is_ad === 1;
-    const isOrganic = row.is_ad === false || row.is_ad === 0;
-    top.append(node('span', isAd ? 'Advertisement' : isOrganic ? 'Organic placement' : 'Unknown placement', `badge ${isAd ? 'ad' : isOrganic ? '' : 'unknown'}`));
-    if (row.destination_unverified) top.append(node('span', 'Google redirect · destination unverified', 'badge unknown'));
-    if (row.is_duplicate) top.append(node('span', 'Repeated URL string', 'badge duplicate'));
-    if (!row.normalized_url) top.append(node('span', 'Invalid URL', 'badge unknown'));
-    article.append(top);
+    const urlValue = safeUrl(row.normalized_url || row.original_url);
+    const domain = urlValue ? new URL(urlValue).hostname.replace(/^www\./, '') : '';
+    article.append(node('div', row.destination_unverified ? 'Google redirect · destination unverified' : domain, 'source'));
     const heading = node('h3');
     const url = safeUrl(row.normalized_url);
     if (url) {
       const link = node('a', row.title || 'Untitled result'); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; heading.append(link);
     } else heading.textContent = row.title || 'Untitled result';
-    article.append(heading, node('span', row.normalized_url || row.original_url, 'destination'));
-    article.append(node('p', row.snippet || 'No snippet was provided in the source HTML.'));
-    const details = node('details'); details.append(node('summary', 'Original observed URL'), node('div', row.original_url, 'original')); article.append(details);
+    article.append(heading);
+    if (urlValue) { const address = node('a', urlValue, 'destination'); address.href = urlValue; address.target = '_blank'; address.rel = 'noopener noreferrer'; article.append(address); }
+    article.append(node('p', row.snippet || 'No snippet provided.'));
     list.append(article);
   }
 }
 function showRun(data) {
   current = data;
   const run = data.run;
+  byId('query').value = run.query_text;
+  setSearchType('internet');
+  document.body.classList.add('has-results');
+  byId('internet-results').hidden = false;
   byId('run-status').textContent = `#${run.id} · ${run.status}`;
   byId('run-status').className = `badge ${run.status === 'failed' ? 'failed' : ''}`;
   const values = byId('diagnostic-values'); values.replaceChildren();
-  for (const [label, value] of [ ['Query', run.query_text], ['Engine', run.engine], ['Fetcher', run.fetcher || 'Not recorded for this run'], ['Run ID', run.id], ['Status', run.status], ['Raw', run.raw_count], ['Ads', run.ad_count], ['Exact URL duplicates', run.duplicate_count], ['Distinct observed URLs', run.final_count], ['Direct result URLs', `${run.direct_url_count ?? '—'} / 50`], ['Google redirect URLs', run.google_redirect_count ?? '—'], ['Pages saved', data.collection?.pages ?? 'Not recorded'], ['Provider', run.provider || 'Historical / not recorded'], ['Error', run.error_message || 'None'] ]) {
+  for (const [label, value] of [['Provider', run.engine === 'google' ? 'Google · ScraperAPI' : run.engine], ['Saved', run.started_at || run.created_at || 'Not recorded'], ['Stored results', run.final_count], ['Pages', data.collection?.pages], ['Page budget', data.collection?.max_pages], ['Direct URLs', run.direct_url_count], ['Unverified Google redirects', run.google_redirect_count], ['Error', run.error_message]].filter(([,value]) => value !== undefined && value !== null && value !== '')) {
     const item = node('div'); item.append(node('dt', label), node('dd', value)); values.append(item);
   }
   const links = byId('artifact-links'); links.replaceChildren();
   for (const item of data.artifacts) {
     for (const [label, path] of [['View screenshot', item.screenshot_url], ['Read OCR text', item.ocr_url]]) {
-      if (path) { const link = node('a', `${label} · ${item.id}`); link.href = path; link.target = '_blank'; link.rel = 'noopener'; links.append(link); }
+      if (path) { const link = node('a', label); link.href = path; link.target = '_blank'; link.rel = 'noopener'; links.append(link); }
     }
   }
   let warning = data.warning || '';
@@ -89,7 +88,7 @@ function showRun(data) {
   document.querySelectorAll('.history-item').forEach(item => item.setAttribute('aria-current', String(Number(item.dataset.id) === run.id)));
 }
 async function openRun(id) {
-  try { showRun(await api(`/api/runs/${id}`)); }
+  try { showRun(await api(`/api/runs/${id}`)); toggleSidebar(false); scrollResults(); }
   catch (error) { message(error.message); }
 }
 async function loadHistory(initial = false) {
@@ -100,7 +99,12 @@ async function loadHistory(initial = false) {
     for (const run of rows) {
       const button = node('button', null, 'history-item'); button.type = 'button'; button.dataset.id = run.id; button.disabled = busy;
       button.setAttribute('aria-current', String(current?.run.id === run.id));
-      button.append(node('strong', run.query_text), node('small', `#${run.id} · ${run.engine} · ${run.status} · ${run.final_count} distinct observed URLs`));
+      const date = new Date(run.started_at || run.created_at);
+      const dateLabel = Number.isNaN(date.getTime()) ? 'Saved search' : date.toLocaleDateString();
+      let metadata = run.collection_metadata;
+      if (typeof metadata === 'string') { try { metadata = JSON.parse(metadata); } catch { metadata = null; } }
+      const modeLabel = metadata?.mode === 'collect' ? 'Collect 50' : 'Search';
+      button.append(node('strong', run.query_text), node('small', `${modeLabel} · ${dateLabel} · ${run.final_count} results`));
       button.addEventListener('click', () => openRun(run.id)); list.append(button);
     }
     if (initial && rows.length) await openRun(rows[0].id);
@@ -113,22 +117,23 @@ function updateActions() {
   const compatible = current?.run.provider === 'google:scraperapi:structured';
   byId('collect-more').disabled = busy || !sameQuery || !compatible || current.run.satisfies_50;
   byId('capture-run').disabled = busy || !current || !['google', 'bing'].includes(current.run.engine) || !current.results.length || current.run.status === 'running';
-  byId('search-button').firstChild.textContent = collect ? 'Collect 50 ' : 'Search ';
+  byId('search-button').textContent = collect ? 'Collect 50 ↗' : 'Search ↗';
 }
 function setBusy(value) {
   busy = value; byId('loading').hidden = !value;
-  for (const id of ['query', 'engine', 'mode', 'search-button', 'refresh-history', 'refresh-search']) byId(id).disabled = value;
+  for (const id of ['query', 'mode', 'search-button', 'refresh-history', 'refresh-search', 'internet-mode', 'ai-mode']) byId(id).disabled = value;
   document.querySelectorAll('.history-item').forEach(item => item.disabled = value);
   updateActions();
 }
 async function submitSearch(refresh = false, resumeRunId = null) {
-  if (busy) return;
+  if (busy || searchType === 'ai') return;
+  if (!byId('query').value.trim()) { message('Enter a research query.'); return; }
   const mode = resumeRunId ? 'collect' : byId('mode').value;
   if (resumeRunId) byId('mode').value = 'collect';
   const pages = mode === 'collect' ? Number(byId('max-pages').value) : 1;
   if (!Number.isInteger(pages) || pages < 1 || pages > 20) { message('Choose a page budget from 1 to 20.'); return; }
   setBusy(true); message('');
-  byId('loading').lastChild.textContent = ' Checking saved collections; only authorized pages will be requested…';
+  byId('loading-text').textContent = ' Checking saved collections; only authorized pages will be requested…';
   const baseline = Math.max(0, ...Array.from(document.querySelectorAll('.history-item')).map(item => Number(item.dataset.id)));
   let progressBusy = false;
   const progress = setInterval(async () => {
@@ -139,7 +144,7 @@ async function submitSearch(refresh = false, resumeRunId = null) {
       const active = runs.find(run => run.query_text === byId('query').value && run.engine === 'google' && (resumeRunId ? run.id === resumeRunId : run.id > baseline));
       if (active) {
         const data = await api(`/api/runs/${active.id}`);
-        byId('loading').lastChild.textContent = ` Run #${active.id}: ${data.collection?.pages ?? 0} pages saved, ${data.run.final_count} distinct observed URLs, ${data.run.direct_url_count ?? 0} direct URLs / 50.`;
+        byId('loading-text').textContent = ` Run #${active.id}: ${data.collection?.pages ?? 0} pages saved, ${data.run.final_count} distinct observed URLs, ${data.run.direct_url_count ?? 0} direct URLs / 50.`;
       }
     } catch { /* Final request/error display remains authoritative. */ }
     finally { progressBusy = false; }
@@ -155,6 +160,7 @@ async function submitSearch(refresh = false, resumeRunId = null) {
       data = await api('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}, pages * 75000 + 15000);
     }
     showRun(data);
+    scrollResults();
   } catch (error) { message(error.message); }
   finally { clearInterval(progress); await loadHistory(); setBusy(false); }
 }
@@ -165,7 +171,7 @@ byId('mode').addEventListener('change', updateActions);
 byId('query').addEventListener('input', updateActions);
 byId('organic-only').addEventListener('change', renderResults);
 byId('refresh-history').addEventListener('click', () => loadHistory());
-loadHistory(true);
+loadHistory();
 api('/api/search-options').then(options => { byId('max-pages').value = options.collection_max_pages; updateActions(); }).catch(error => message(error.message));
 
 byId('capture-run').addEventListener('click', async () => {
@@ -178,4 +184,46 @@ byId('capture-run').addEventListener('click', async () => {
     message(result.status === 'completed' ? 'Authentic provider screenshot and local OCR saved.' : result.error || 'Capture did not complete.');
   } catch (error) { message(error.message); }
   finally { setBusy(false); }
+});
+
+function toggleSidebar(open) {
+  byId('sidebar').hidden = !open;
+  byId('sidebar-backdrop').hidden = !open;
+  byId('toggle-history').setAttribute('aria-expanded', String(open));
+  document.body.classList.toggle('sidebar-open', open);
+  if (open) byId('close-history').focus();
+  else byId('toggle-history').focus();
+}
+function setSearchType(type) {
+  searchType = type;
+  const ai = type === 'ai';
+  byId('internet-mode').setAttribute('aria-pressed', String(!ai));
+  byId('ai-mode').setAttribute('aria-pressed', String(ai));
+  byId('internet-controls').hidden = ai;
+  byId('credit-note').hidden = ai;
+  byId('ai-results').hidden = !ai;
+  byId('internet-results').hidden = ai || !current;
+  document.body.classList.toggle('has-results', !!current || ai);
+  message('');
+}
+function scrollResults() {
+  requestAnimationFrame(() => (byId('results').firstElementChild || byId('internet-results')).scrollIntoView({behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block:'start'}));
+}
+byId('internet-mode').addEventListener('click', () => setSearchType('internet'));
+byId('ai-mode').addEventListener('click', () => setSearchType('ai'));
+byId('toggle-history').addEventListener('click', () => toggleSidebar(byId('sidebar').hidden));
+byId('close-history').addEventListener('click', () => toggleSidebar(false));
+byId('sidebar-backdrop').addEventListener('click', () => toggleSidebar(false));
+document.addEventListener('keydown', event => { if (event.key === 'Escape' && !byId('sidebar').hidden) toggleSidebar(false); });
+byId('new-search').addEventListener('click', () => {
+  current = null; setSearchType('internet'); document.body.classList.remove('has-results');
+  byId('query').value = ''; byId('mode').value = 'search'; updateActions(); toggleSidebar(false); byId('query').focus();
+});
+
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Tab' || byId('sidebar').hidden || matchMedia('(min-width:1200px)').matches) return;
+  const controls = [...byId('sidebar').querySelectorAll('button:not(:disabled), a[href]')];
+  const first = controls[0], last = controls[controls.length - 1];
+  if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+  else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
 });
