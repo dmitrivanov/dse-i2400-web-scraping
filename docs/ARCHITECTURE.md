@@ -1,6 +1,6 @@
 # Architecture — Milestone 09
 
-The final Milestone 09 section describes current behavior. Earlier sections document
+The final source Library / multi-engine refinement section describes current behavior. Earlier sections document
 the preceding implementation and verification boundaries. See AI_SEARCH.md for the
 current Gemini module/API/limits and controlled live-test workflow.
 
@@ -289,3 +289,39 @@ records; it cannot generate another answer. Google Suggestions render in a scrip
 sandboxed iframe. Model Markdown never executes HTML; only known grounding URLs get
 clickable inline links. These sources are provider observations, not independent
 publisher verification. See docs/AI_SEARCH.md for live-test boundaries and limitations.
+
+## Current source Library / multi-engine refinement
+
+Google's JSON provider is unchanged. `engine_search.py` uses requests and the standard
+ScraperAPI url parameter for Bing, Yahoo and DuckDuckGo HTML, parses only observed
+organic card structures, validates same-query increasing next offsets, and returns
+the existing observation model. No retry, fallback engine, CAPTCHA handling or new
+framework. Registry choices explicitly distinguish Bing direct CLI from Bing GUI's
+ScraperAPI identity. First pages were live verified once each and persisted; further
+pages are mocked only. DuckDuckGo's observed HTML next form is rebuilt with q/s;
+if the service repeats or challenges a later page, the collector stops and reports
+actual saved counts rather than inventing continuation or rotating sessions.
+
+`source_identity.py` upserts one exact normalized URL identity into source_catalog
+and search_results references its ID. This identity write shares the existing page
+transaction with observation writes. A unique SHA256 key prevents duplicate source
+identity rows. Observations retain their own original/normalized URLs, rank, snippet
+and run association; no historical rows are collapsed. source_library.sql is additive,
+with an explicit backfill helper and no startup DDL. Known Yahoo RU wrappers use the
+same static decoding principle as existing Bing/DDG normalization, without fetching
+redirect targets. Google opaque tokens are never decoded or called canonical publishers.
+
+`source_library.py` adds GET /api/library/sources: full Web observations plus actual
+Gemini source rows, page/total counts and local TF-IDF cosine lookup. Existing
+/api/library stays compatible for AI research/summary listing. The table UI opens
+Web runs or saved AI output without paid calls. All/Web sources search titles and
+snippets; AI mode lists saved responses/summaries separately. Searching the Library
+never queries a search engine or LLM. Current dataset is small enough for an in-memory
+corpus scan; no embedding service, ORM or global crawling is introduced.
+
+Gemini source descriptions reuse grounding-support segments via grounded_excerpt;
+missing per-source text remains unknown. Sources precede the expandable overview.
+The Library navigation defect was traced to an overbroad shared click-binding list
+including ai-search-button, ai-engine and summarize-ai. Only the actual Library
+controls now bind that action. Pending-request browser regression covers the original
+symptom, not just the finished response. Existing global busy guard/cost guards remain.

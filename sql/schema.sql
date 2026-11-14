@@ -32,6 +32,13 @@ CREATE TABLE IF NOT EXISTS search_runs (
     CONSTRAINT chk_search_runs_counts CHECK (raw_count >= 0 AND ad_count >= 0 AND duplicate_count >= 0 AND final_count >= 0)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+CREATE TABLE IF NOT EXISTS source_catalog (
+ id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ url_hash BINARY(32) NOT NULL,
+ url TEXT NOT NULL,
+ UNIQUE KEY uq_source_url_hash (url_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
+
 CREATE TABLE IF NOT EXISTS search_results (
     id BIGINT NOT NULL AUTO_INCREMENT,
     run_id BIGINT NOT NULL,
@@ -40,6 +47,10 @@ CREATE TABLE IF NOT EXISTS search_results (
     normalized_url TEXT NULL,
     snippet TEXT NULL,
     displayed_link TEXT NULL,
+    source_id BIGINT NULL,
+    INDEX idx_search_results_source_id (source_id),
+    CONSTRAINT fk_search_results_source_id FOREIGN KEY (source_id)
+        REFERENCES source_catalog(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
     result_rank INT NULL,
     page_number INT NULL,
     is_ad BOOLEAN NULL DEFAULT NULL,

@@ -3,6 +3,7 @@ import mysql.connector
 from mysql.connector import Error, MySQLConnection
 
 from config import get_database_config
+from source_identity import source_id
 
 
 def get_connection() -> MySQLConnection:
@@ -40,7 +41,7 @@ def insert_search_run(connection: MySQLConnection, query_id: int, engine: str = 
     """Start an engine-specific run for an existing query."""
     with connection.cursor() as cursor:
         cursor.execute("INSERT INTO search_runs (query_id, engine, status, provider, search_type) VALUES (%s, %s, %s, %s, %s)",
-                       (query_id, engine, "running", provider, "web" if engine in {"google", "bing"} else None))
+                       (query_id, engine, "running", provider, "web" if engine in {"google", "bing", "yahoo", "duckduckgo"} else None))
         return cursor.lastrowid
 
 
@@ -50,12 +51,13 @@ def insert_search_results(connection: MySQLConnection, run_id: int, results: lis
         return
     with connection.cursor() as cursor:
         for row in results:
+            identity = source_id(connection, row.get("normalized_url"))
             cursor.execute(
                 """INSERT INTO search_results
-                (run_id, title, original_url, normalized_url, snippet, result_rank, is_ad, is_duplicate, page_number, displayed_link)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (run_id, title, original_url, normalized_url, snippet, result_rank, is_ad, is_duplicate, source_id, page_number, displayed_link)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (run_id, row["title"], row["original_url"], row["normalized_url"], row["snippet"],
-                 row["result_rank"], row["is_ad"], row["is_duplicate"], row.get("page_number"), row.get("displayed_link")),
+                 row["result_rank"], row["is_ad"], row["is_duplicate"], identity, row.get("page_number"), row.get("displayed_link")),
             )
             row["id"] = cursor.lastrowid
 
@@ -102,7 +104,9 @@ def get_search_run(run_id: int) -> dict | None:
             run = cursor.fetchone()
             if run is None:
                 return None
-            cursor.execute("SELECT * FROM search_results WHERE run_id=%s ORDER BY id", (run_id,))
+            cursor.execute("""SELECT s.*, EXISTS(SELECT 1 FROM search_results older
+                WHERE older.source_id=s.source_id AND older.run_id<>s.run_id AND older.id<s.id) AS previously_seen
+                FROM search_results s WHERE s.run_id=%s ORDER BY s.id""", (run_id,))
             results = cursor.fetchall()
             cursor.execute("SELECT * FROM capture_artifacts WHERE run_id=%s ORDER BY id", (run_id,))
             return {"run": run, "results": results, "artifacts": cursor.fetchall()}

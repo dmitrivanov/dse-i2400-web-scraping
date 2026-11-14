@@ -41,7 +41,10 @@ def read_packet(response_id: int) -> dict:
     data = ai_store.read_response(response_id)
     if not data:
         raise HTTPException(404, 'AI response not found')
-    # Prompt/token metadata is accessed through Details only; no secrets are stored.
+    # Source descriptions use existing grounding associations, never an extra AI call.
+    grounding = data['response'].get('grounding_metadata') or {}
+    for source in data['sources']:
+        source['summary'] = gemini.grounded_excerpt(grounding, source['chunk_index'])
     return data
 
 

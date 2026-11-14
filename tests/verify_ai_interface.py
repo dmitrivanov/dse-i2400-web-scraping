@@ -34,6 +34,7 @@ with sync_playwright() as p:
     assert page.locator('#ai-engine').input_value()=='gemini'
     page.locator('#query').fill(QUERY)
     page.locator('#ai-search-button').click()
+    page.locator('#ai-overview').evaluate('(element) => element.open = true')
     page.wait_for_selector('#ai-response strong')
     page.wait_for_function("document.querySelector('#loading').hidden")
     assert len(research)==2 and sum(item['allow_paid'] for item in research)==1

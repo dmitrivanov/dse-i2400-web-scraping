@@ -44,7 +44,8 @@ function renderResults() {
   for (const row of rows) {
     const article = node('article', null, 'result');
     const urlValue = safeUrl(row.original_url) || safeUrl(row.normalized_url);
-    const domain = urlValue ? new URL(urlValue).hostname.replace(/^www\./, '') : '';
+    const sourceUrl = safeUrl(row.normalized_url) || urlValue;
+    const domain = sourceUrl ? new URL(sourceUrl).hostname.replace(/^www\./, '') : '';
     const source = node('div', null, 'source');
     const icon = node('span', '◉', 'website-icon'); icon.setAttribute('aria-hidden', 'true'); source.append(icon);
     // A displayed_link is provider display text, never a replacement destination.
@@ -52,6 +53,8 @@ function renderResults() {
     const displayUrl = safeUrl(display.startsWith('http') ? display : `https://${display}`);
     const displayDomain = displayUrl ? new URL(displayUrl).hostname.replace(/^www\./, '') : '';
     source.append(node('span', row.destination_unverified ? 'Website' : (displayDomain === domain ? displayDomain : domain) || 'Website'));
+    source.append(node('span', engineLabel(current.run.engine), `engine-badge badge-${current.run.engine}`));
+    if (row.previously_seen || current.reused) source.append(node('span', 'Already in database', 'database-badge'));
     article.append(source);
     const heading = node('h3');
     if (urlValue) {
@@ -68,13 +71,14 @@ function showRun(data) {
   byId('search-form').closest('section').hidden = false;
   const run = data.run;
   byId('query').value = run.query_text;
+  if (document.querySelector(`.engine-choice[data-engine="${run.engine}"]`)) { byId('engine').value = run.engine; document.querySelectorAll('.engine-choice').forEach(item => item.setAttribute('aria-pressed', String(item.dataset.engine === run.engine))); }
   setSearchType('internet');
   document.body.classList.add('has-results');
   byId('internet-results').hidden = false;
   byId('run-status').textContent = `#${run.id} · ${run.status}`;
   byId('run-status').className = `badge ${run.status === 'failed' ? 'failed' : ''}`;
   const values = byId('diagnostic-values'); values.replaceChildren();
-  for (const [label, value] of [['Provider', run.engine === 'google' ? 'Google · ScraperAPI' : run.engine], ['Saved', run.started_at || run.created_at || 'Not recorded'], ['Stored results', run.final_count], ['Pages', data.collection?.pages], ['Maximum pages', data.collection?.max_pages], ['Direct URLs', run.direct_url_count], ['Unverified Google redirects', run.google_redirect_count], ['Error', run.error_message]].filter(([,value]) => value !== undefined && value !== null && value !== '')) {
+  for (const [label, value] of [['Provider', engineLabel(run.engine)], ['Saved', run.started_at || run.created_at || 'Not recorded'], ['Stored results', run.final_count], ['Pages', data.collection?.pages], ['Maximum pages', data.collection?.max_pages], ['Direct URLs', run.direct_url_count], ['Unverified Google redirects', run.google_redirect_count], ['Error', run.error_message]].filter(([,value]) => value !== undefined && value !== null && value !== '')) {
     const item = node('div'); item.append(node('dt', label), node('dd', value)); values.append(item);
   }
   const links = byId('artifact-links'); links.replaceChildren();
@@ -120,16 +124,14 @@ async function loadHistory(initial = false) {
 function updateActions() {
   const collect = byId('mode').value === 'collect';
   byId('max-pages').disabled = busy;
-  const sameQuery = current?.run.query_text === byId('query').value;
-  const compatible = current?.run.provider === 'google:scraperapi:structured';
-  byId('collect-more').disabled = busy || !sameQuery || !compatible || current.run.satisfies_50;
+
   byId('capture-run').disabled = busy || !current || !['google', 'bing'].includes(current.run.engine) || !current.results.length || current.run.status === 'running';
   byId('search-button').textContent = collect ? 'Collect 50 ↗' : 'Search ↗';
 }
 function setBusy(value) {
   busy = value; byId('loading').hidden = !value;
-  for (const id of ['query', 'engine', 'mode', 'search-button', 'refresh-search', 'internet-mode', 'ai-mode', 'collect50', 'open-library', 'sidebar-library', 'ai-search-button', 'ai-engine', 'summarize-ai']) byId(id).disabled = value;
-  document.querySelectorAll('.history-item').forEach(item => item.disabled = value);
+  for (const id of ['query', 'engine', 'mode', 'search-button', 'internet-mode', 'ai-mode', 'open-library', 'sidebar-library', 'ai-search-button', 'ai-engine', 'summarize-ai']) byId(id).disabled = value;
+  document.querySelectorAll('.history-item, .engine-choice').forEach(item => item.disabled = value);
   updateActions();
 }
 async function submitSearch(refresh = false, resumeRunId = null) {
@@ -149,7 +151,7 @@ async function submitSearch(refresh = false, resumeRunId = null) {
     progressBusy = true;
     try {
       const runs = await api('/api/runs');
-      const active = runs.find(run => run.query_text === byId('query').value && run.engine === 'google' && (resumeRunId ? run.id === resumeRunId : run.id > baseline));
+      const active = runs.find(run => run.query_text === byId('query').value && run.engine === byId('engine').value && (resumeRunId ? run.id === resumeRunId : run.id > baseline));
       if (active) {
         const data = await api(`/api/runs/${active.id}`);
         byId('loading-text').textContent = ` Run #${active.id}: ${data.collection?.pages ?? 0} pages saved, ${data.run.final_count} distinct observed URLs, ${data.run.direct_url_count ?? 0} direct URLs / 50.`;
@@ -173,8 +175,8 @@ async function submitSearch(refresh = false, resumeRunId = null) {
   finally { clearInterval(progress); await loadHistory(); setBusy(false); }
 }
 byId('search-form').addEventListener('submit', event => { event.preventDefault(); submitSearch(); });
-byId('refresh-search').addEventListener('click', () => submitSearch(true));
-byId('collect-more').addEventListener('click', () => submitSearch(false, current.run.id));
+
+
 byId('mode').addEventListener('change', updateActions);
 byId('query').addEventListener('input', updateActions);
 byId('all-observations').addEventListener('change', renderResults);
@@ -253,41 +255,72 @@ async function loadLibrary() {
   byId('library-prev').disabled = true; byId('library-next').disabled = true;
   try {
     const filter = byId('library-filter').value;
-    const data = await api(`/api/library?page=${libraryPage}${filter ? `&search_type=${filter}` : ''}`);
+    const query = byId('library-query').value;
+    byId('library-search-form').hidden = filter === 'ai';
+    const data = await api(filter === 'ai' ? `/api/library?page=${libraryPage}&search_type=ai` : `/api/library/sources?page=${libraryPage}&q=${encodeURIComponent(query)}${filter === 'web' ? '&search_type=web' : ''}`);
     const list = byId('library-list'); list.replaceChildren();
+    const table = node('table', null, 'source-table');
+    const head = node('thead'), heading = node('tr');
+    for (const label of ['Retrieved', 'Source / result', 'Engine', 'URL']) heading.append(node('th', label));
+    head.append(heading); table.append(head);
+    const body = node('tbody');
     for (const item of data.items) {
-      const button = node('button', null, 'library-item');
-      button.append(node('strong', item.query_text), node('small', `${item.search_type === 'web' ? 'Web' : item.search_type === 'ai' ? 'AI' : 'Unknown'} · ${item.provider || 'Unknown provider'} · ${new Date(item.created_at).toLocaleString()} · ${item.result_count} results · ${item.summary_available ? 'Summary available' : 'No summary'}`));
-      button.addEventListener('click', async () => {
-        if (item.kind === 'run' && item.search_type !== 'ai') { await openRun(item.id); return; }
-        try {
-          const output = await api(`/api/library/${item.kind}/${item.id}`);
-          if (output.responses?.[0]?.prompt_version) { await openAI(output.responses[0].id); return; }
-          const area = byId('saved-ai'); area.replaceChildren(node('h2', item.query_text));
-          for (const response of output.responses) {
-            const details = node('details'); details.append(node('summary', `${response.provider} · ${response.model_name || 'Model not recorded'}`), node('pre', response.response_text)); area.append(details);
-          }
-          for (const summary of output.summaries) { area.append(node('h3', 'Saved summary'), node('pre', summary.summary_text)); appendDownloads(area, summary.id); }
-          if (!output.responses.length && !output.summaries.length) area.append(node('p', 'No saved AI output for this run.'));
-        } catch (error) { byId('library-status').textContent = error.message; }
-      });
-      list.append(button);
+      const tr = node('tr', null, 'library-item');
+      const date = node('td', new Date(item.created_at).toLocaleString());
+      const card = node('td');
+      const open = node('button', item.title || item.query_text || 'Untitled', 'library-open');
+      open.type = 'button';
+      open.addEventListener('click', () => openLibraryItem(item, filter));
+      card.append(open);
+      if (item.snippet) card.append(node('p', item.snippet));
+      if (item.previously_seen) card.append(node('span', 'Already in database', 'database-badge'));
+      if (item.summary_available) card.append(node('span', 'Summary saved', 'database-badge'));
+      if (item.is_duplicate) card.append(node('span', 'Repeated in this search', 'database-badge'));
+      if (item.is_ad === 1 || item.is_ad === true) card.append(node('span', 'Advertisement', 'database-badge'));
+      const engine = node('td'); engine.append(node('span', engineLabel(item.engine || item.provider), `engine-badge badge-${item.engine || item.provider}`));
+      const destination = node('td');
+      const url = safeUrl(item.original_url || item.normalized_url);
+      if (url) { const a = node('a', isOpaqueUrl(url) ? 'Open source' : new URL(url).hostname); a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer'; destination.append(a); }
+      else destination.textContent = '—';
+      tr.append(date, card, engine, destination); body.append(tr);
     }
-    byId('library-status').textContent = data.items.length ? '' : 'No saved items.';
+    table.append(body); list.append(table);
+    byId('library-status').textContent = filter === 'ai' ? (data.items.length ? 'Saved AI research' : 'No saved AI research.') : `${data.total} matching observations · ${data.stored_count} stored in the full database`;
     byId('library-page').textContent = `Page ${data.page}`;
     byId('library-prev').disabled = libraryPage <= 1;
     byId('library-next').disabled = !data.has_more;
   } catch (error) { byId('library-status').textContent = error.message; }
 }
-for (const id of ['open-library', 'sidebar-library', 'ai-search-button', 'ai-engine', 'summarize-ai']) byId(id).addEventListener('click', () => { toggleSidebar(false); libraryPage = 1; loadLibrary(); });
+async function openLibraryItem(item, filter) {
+  if (item.ai_response_id) { await openAI(item.ai_response_id); return; }
+  if (filter !== 'ai') { await openRun(item.run_id); return; }
+  try {
+    const output = await api(`/api/library/${item.kind}/${item.id}`);
+    if (output.responses?.[0]?.prompt_version) { await openAI(output.responses[0].id); return; }
+    const area = byId('saved-ai'); area.replaceChildren(node('h2', item.query_text));
+    for (const response of output.responses) {
+      const details = node('details'); details.append(node('summary', `${response.provider} · ${response.model_name || 'Model not recorded'}`), node('pre', response.response_text)); area.append(details);
+    }
+    for (const summary of output.summaries) { area.append(node('h3', 'Saved summary'), node('pre', summary.summary_text)); appendDownloads(area, summary.id); }
+  } catch (error) { byId('library-status').textContent = error.message; }
+}
+for (const id of ['open-library', 'sidebar-library']) byId(id).addEventListener('click', () => { toggleSidebar(false); libraryPage = 1; loadLibrary(); });
 byId('close-library').addEventListener('click', () => setSearchType(searchType));
 byId('library-filter').addEventListener('change', () => { libraryPage = 1; loadLibrary(); });
 byId('library-prev').addEventListener('click', () => { libraryPage--; loadLibrary(); });
 byId('library-next').addEventListener('click', () => { libraryPage++; loadLibrary(); });
-byId('collect50').addEventListener('click', () => { byId('mode').value = 'collect'; submitSearch(); });
+
 byId('max-pages').addEventListener('change', () => { byId('mode').value = 'search'; updateActions(); });
 
 function activeNavigation(id) {
   document.querySelectorAll('.sidebar-nav button').forEach(button => button.removeAttribute('aria-current'));
   byId(id).setAttribute('aria-current', 'page');
 }
+
+function engineLabel(engine) { return ({google:'Google',bing:'Bing',yahoo:'Yahoo',duckduckgo:'DuckDuckGo',gemini:'Gemini'})[engine] || engine || 'Unknown'; }
+function isOpaqueUrl(value) { const url = new URL(value); return /(^|\.)(google|bing|yahoo|duckduckgo)\.com$/.test(url.hostname) && /\/(goto|url|ck|l|_ylt)/.test(url.pathname); }
+for (const button of document.querySelectorAll('.engine-choice')) button.addEventListener('click', () => {
+  byId('engine').value = button.dataset.engine;
+  document.querySelectorAll('.engine-choice').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+});
+byId('library-search-form').addEventListener('submit', event => { event.preventDefault(); libraryPage = 1; loadLibrary(); });

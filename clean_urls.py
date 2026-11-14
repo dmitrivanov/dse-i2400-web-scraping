@@ -3,7 +3,7 @@ import re
 import base64
 import binascii
 
-from urllib.parse import parse_qs, unquote_plus, urljoin, urlsplit, urlunsplit
+from urllib.parse import parse_qs, unquote, unquote_plus, urljoin, urlsplit, urlunsplit
 
 TRACKING = {"gclid", "dclid", "fbclid", "msclkid"}
 
@@ -38,6 +38,11 @@ def normalize_url(original: str) -> str | None:
             else:
                 url = value
             parts = urlsplit(url)
+        if parts.hostname == 'r.search.yahoo.com':
+            match = re.search(r'/RU=(.*?)/RK=', parts.path)
+            if match:
+                url = unquote(match.group(1))
+                parts = urlsplit(url)
         if any(ord(char) <= 32 or ord(char) == 127 for char in url):
             return None
         if parts.scheme.lower() not in {"http", "https"} or not parts.hostname:

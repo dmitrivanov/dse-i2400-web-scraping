@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.staticfiles import StaticFiles
 from web_search import router
 from library import router as library_router
+from source_library import router as source_library_router
 from ai_routes import router as ai_router
 from mysql.connector import Error
 
@@ -12,6 +13,7 @@ import db
 
 app = FastAPI(title="MY_CUSTOM_BOT")
 app.include_router(router)
+app.include_router(source_library_router)
 app.include_router(library_router)
 app.include_router(ai_router)
 app.mount("/static", StaticFiles(directory=Path(__file__).resolve().parent / "static"), name="static")

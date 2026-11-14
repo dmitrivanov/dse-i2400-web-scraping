@@ -21,7 +21,7 @@ ARTIFACT_ROOT = ROOT / "artifacts"
 class SearchRequest(BaseModel):
     """Primary provider and deliberate collection/refresh choices, without fallback."""
     query: str = Field(min_length=1, max_length=1000)
-    engine: Literal["google"] = "google"
+    engine: Literal["google", "bing", "yahoo", "duckduckgo"] = "google"
     fetcher: Literal["scraperapi"] = "scraperapi"
     mode: Literal["search", "collect"] = "search"
     max_pages: int | None = Field(default=None, ge=1, le=50, strict=True)
@@ -50,7 +50,7 @@ def read_run(run_id: int) -> dict:
     candidate = legacy.get("fetcher")
     fetcher = candidate if candidate in {"direct", "scraperapi"} else None
     data["run"]["provider"] = provider_for_run(data["run"])
-    data["run"]["fetcher"] = "scraperapi" if data["run"]["provider"] == "google:scraperapi:structured" else fetcher
+    data["run"]["fetcher"] = "scraperapi" if data["run"]["provider"] and ":scraperapi:" in data["run"]["provider"] else fetcher
     from clean_urls import clean_results, is_google_redirect, url_evidence_counts
     cleaned, _ = clean_results(data["results"], preserve_urls=data["run"]["engine"] == "google")
     for row in data["results"]:

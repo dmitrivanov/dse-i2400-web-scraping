@@ -10,8 +10,8 @@ router = APIRouter()
 # Keep retrieval identity (search_runs.provider) separate from a human provider name.
 LIBRARY_SQL = """
 SELECT 'run' AS kind, r.id, q.query_text,
- COALESCE(r.search_type, CASE WHEN r.engine IN ('google','bing','duckduckgo') THEN 'web' END) AS search_type,
- CASE WHEN r.engine IN ('google','bing','duckduckgo') OR r.search_type='ai' THEN r.engine END AS provider,
+ COALESCE(r.search_type, CASE WHEN r.engine IN ('google','bing','yahoo','duckduckgo') THEN 'web' END) AS search_type,
+ CASE WHEN r.engine IN ('google','bing','yahoo','duckduckgo') OR r.search_type='ai' THEN r.engine END AS provider,
  r.started_at AS created_at,
  CASE WHEN r.search_type='ai' THEN (SELECT COUNT(*) FROM ai_responses a WHERE a.run_id=r.id)
  ELSE r.final_count END AS result_count,

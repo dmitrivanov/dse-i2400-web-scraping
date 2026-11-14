@@ -1,10 +1,9 @@
 # MY_CUSTOM_BOT
 
-Current: **Milestone 09** — polished UI, 1–50 Web pages, and implemented Gemini
-research → sources → separate summary → Markdown/PDF export. AI is mock/integration
-verified; live account/model verification is pending. Google remains the only GUI
-Web engine. See [current workflow](#milestone-09--current-interface-and-ai-workflow)
-and [Gemini guide](docs/AI_SEARCH.md). Earlier milestone sections are an audit trail.
+Current: Google, Bing, Yahoo and DuckDuckGo Web search; automatic source identity
+reuse and saving; full tabular source Library with local cosine lookup; source-first
+Gemini research, separate summaries and saved Markdown/PDF exports. See the current
+refinement section below. Earlier milestone sections retain historical audit evidence.
 
 CCNY DSE I2400 Advanced Web Scraping. Default research topic:
 `childhood cancer early diagnosis methods` (Group B). Other valid original queries
@@ -412,3 +411,73 @@ Milestone 09 validation: **235 tests passed**, plus layout/Web/AI browser checks
 an isolated real-MySQL round-trip with mocked generations. All five fixture PDF
 pages were visually reviewed. Two dependency deprecation warnings remain. No paid
 Web or Gemini calls occurred, and permanent research data stayed unchanged.
+
+## Current refinement — engines, source Library and Gemini navigation
+
+The existing visual layout is preserved. Web engine selection now uses compact
+Google/Bing/Yahoo/DuckDuckGo icon buttons. Google retains its structured JSON route;
+the other three use ScraperAPI's [documented URL retrieval API](https://docs.scraperapi.com/)
+with engine-specific result-card parsers, not a renamed Google endpoint. Bing's
+legacy direct CLI path remains unchanged; GUI requests explicitly select ScraperAPI.
+There is no silent engine substitution or challenge bypass. Three authorized live
+requests returned HTTP200 genuine results: Bing10, Yahoo7, DuckDuckGo10, saved via
+the shared ETL as runs18/19/20. No additional live pages were purchased; later-page
+behavior is fixture-tested, not live-verified. Returned next offsets are11/8/10.
+
+Collect50/Refresh/CollectMore buttons were removed from the main UI as requested.
+Normal Search automatically deduplicates and saves results; Pages bounds retrieval.
+Existing completed scope is reused and eligible additional pages append through the
+existing workflow. Paid cache misses still need a single confirmation. Explicit
+collection/refresh APIs and CLI remain compatible for existing tools.
+
+Colored engine labels and **Already in database** indicate the originating engine
+and exact source identities observed in earlier runs (or cached results). Source
+identity reuse does not discard search observations: each run retains its rank,
+snippet and original URL. A new `source_catalog` holds one row per exact validated
+normalized URL, with a unique SHA256 key and nullable FK from search_results.
+Google opaque URLs remain unresolved; distinct tokens do not prove distinct publisher
+pages. Static known Bing/DDG/Yahoo wrappers can supply decoded normalized identities;
+original observed hrefs remain available and clickable. No network redirect resolver.
+
+Library defaults to **all stored Web observations and Gemini grounding sources**,
+not the latest search. A paginated table shows retrieval time, result title/snippet,
+engine and source URL/link. AI mode retains saved research/summary reopening.
+The current check found208 Web observations,121 Web URL identities and19 Gemini
+sources (227 source observations total). Counts are observations, not a claim of227
+unique publisher pages. Ads and repeated historical observations are labeled rather
+than erased. Search uses local TF-IDF cosine ranking over titles/snippets: no model
+call or new dependency. It is lexical similarity, so synonyms with no shared terms
+may not match. The implementation scans the local corpus; a much larger deployment
+would need indexed retrieval, outside this assignment's scope.
+
+Gemini displays actual grounded links first, with short excerpts associated through
+saved grounding supports. Missing descriptions are stated instead of invented. The
+research overview is expandable; Summarize has a more noticeable blue treatment.
+The unwanted Library navigation was caused by Library click handlers also being
+attached to Gemini controls; those handlers now attach only to Library navigation.
+Regression checks hold research/summary requests pending and assert the view stays
+on Search. No extra Gemini calls or automatic summarization were introduced.
+
+Website previews were deferred: no extra headless captures are launched during a
+search. Existing explicit screenshot/OCR evidence remains available in Details.
+
+For another installation, inspect columns, apply `sql/source_library.sql` once,
+then attach historical rows without deleting observations:
+
+```sh
+.venv/bin/python -c 'from source_identity import backfill_sources; print(backfill_sources())'
+.venv/bin/python -m pytest -q
+PLAYWRIGHT_BROWSERS_PATH="$PWD/.venv/playwright-browsers" .venv/bin/python tests/verify_interface.py
+PLAYWRIGHT_BROWSERS_PATH="$PWD/.venv/playwright-browsers" .venv/bin/python tests/verify_ai_navigation.py
+PLAYWRIGHT_BROWSERS_PATH="$PWD/.venv/playwright-browsers" .venv/bin/python tests/verify_ai_interface.py
+```
+
+The local additive migration preserved all181 pre-existing Web observations; the
+three genuine live response imports added27. Existing captures and AI rows were
+preserved. Raw provider responses/UI images stay ignored under artifacts/; sanitized
+HTML fixtures contain no API credentials. No keys or generated artifacts are committed.
+
+Verification for this refinement: **252 tests passed** (two dependency deprecation
+warnings), plus Web/Library/mobile checks, Gemini source-first checks, and a regression
+covering pending AI requests without Library navigation. Exactly three authorized
+ScraperAPI requests were used; no new Gemini request was made.

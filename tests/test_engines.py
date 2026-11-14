@@ -57,6 +57,6 @@ def test_db_provider_is_parameterized():
     assert cursor.execute.call_args.args[1]==(10,'bing','running','bing:direct:html','web')
 
 
-@pytest.mark.parametrize('engine,fetcher',[('duckduckgo',None),('google','direct'),('bing','scraperapi')])
+@pytest.mark.parametrize('engine,fetcher',[('duckduckgo',None),('google','direct'),('yahoo','direct')])
 def test_removed_paths_rejected(engine,fetcher):
     with pytest.raises(ValueError):get_provider(engine,fetcher)

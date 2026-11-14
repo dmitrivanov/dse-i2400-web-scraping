@@ -126,7 +126,8 @@ def test_old_opaque_collection_not_marked_fifty_publishers(monkeypatch):
     assert all(row['destination_unverified'] for row in response['results'])
 
 
-def test_insert_records_keep_mysql_assigned_ids_and_page_numbers():
+def test_insert_records_keep_mysql_assigned_ids_and_page_numbers(monkeypatch):
+    monkeypatch.setattr(db,"source_id",lambda *args:7)
     connection=MagicMock();cursor=connection.cursor.return_value.__enter__.return_value
     ids=iter([41,43])
     cursor.execute.side_effect=lambda *args:setattr(cursor,'lastrowid',next(ids))

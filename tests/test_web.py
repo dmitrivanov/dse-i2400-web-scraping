@@ -39,7 +39,7 @@ def test_interface_and_static_assets():
     assert response.status_code == 200 and 'text/html' in response.headers['content-type']
     assert QUERY in response.text
     assert '>Web</button>' in response.text and '>AI</button>' in response.text
-    assert 'Google</option>' in response.text and 'Gemini' in response.text
+    assert 'aria-label="Google"' in response.text and 'Gemini' in response.text
     assert 'Details &amp; evidence' in response.text
     assert 'CCNY' not in response.text
     assert 'Follow the evidence' not in response.text
@@ -50,7 +50,7 @@ def test_interface_and_static_assets():
 @pytest.mark.parametrize("body", [
     {"query": "short query"}, {"query": ""}, {"query": "x" * 1001},
     {"query": QUERY, "engine": "unknown"}, {"query": QUERY, "fetcher": "unknown"},
-    {"query": QUERY, "engine": "bing", "max_pages": 6},
+    {"query": QUERY, "engine": "bing", "max_pages": 51},
     {"query": QUERY, "engine": "duckduckgo", "fetcher": 123},
 ])
 def test_search_validation_before_etl(backend, body):
@@ -58,7 +58,7 @@ def test_search_validation_before_etl(backend, body):
     backend[0].assert_not_called()
 
 
-@pytest.mark.parametrize("engine,fetcher", [("google", "scraperapi")])
+@pytest.mark.parametrize("engine,fetcher", [(engine, "scraperapi") for engine in ("google", "bing", "yahoo", "duckduckgo")])
 def test_search_selection_and_db_readback(backend, engine, fetcher):
     response = client.post('/api/search', json={"query": QUERY, "engine": engine, "fetcher": fetcher})
     assert response.status_code == 200
@@ -192,7 +192,7 @@ def test_options_report_bounded_config_without_search(backend,monkeypatch):
 
 
 def test_web_rejects_legacy_production_choices(backend):
-    for body in [{'query':QUERY,'engine':'duckduckgo'}, {'query':QUERY,'engine':'bing'},
+    for body in [{'query':QUERY,'engine':'unsupported'}, {'query':QUERY,'engine':'bing','fetcher':'direct'},
                  {'query':QUERY,'fetcher':'direct'}]:
         assert client.post('/api/search',json=body).status_code==422
     backend[0].assert_not_called()

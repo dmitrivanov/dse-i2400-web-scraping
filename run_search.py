@@ -132,7 +132,7 @@ def run_search(query: str, max_pages: int | None = None, fetcher: str | None = N
     evidence = url_evidence_counts(observations)
     metadata = {"provider": provider, "fetcher": fetcher, "mode": mode, "target_count": target,
                 "max_pages": limit, "pages": pages, "next_start": start, "stop_reason": "in_progress",
-                "endpoint": "/structured/google/search/v1" if engine == "google" else "bing_html",
+                "endpoint": "/structured/google/search/v1" if engine == "google" else f"{engine}_html",
                 "publisher_destinations_verified": False, "paid_authorized": allow_paid is True,
                 "authorized_new_pages": limit-pages, **evidence}
     status, error, stop_reason = "completed", None, "page_budget"

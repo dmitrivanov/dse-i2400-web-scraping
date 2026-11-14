@@ -42,7 +42,10 @@ function showAI(data) {
   for (const source of data.sources) {
     if (!safeUrl(source.url)) continue;
     const a = node('a', source.title || 'Source'); a.href = source.url; a.target = '_blank'; a.rel = 'noopener noreferrer';
-    const item = node('div', null, 'grounded-source'); item.append(a); sources.append(item);
+    const item = node('div', null, 'grounded-source'); item.append(a);
+    if (source.summary) item.append(node('p', source.summary));
+    else item.append(node('p', 'No source-specific summary was returned.', 'hint'));
+    sources.append(item);
   }
   if (data.sources.length) sources.append(node('p', 'Sources supplied by Gemini grounding; publisher destinations have not been independently verified.', 'hint'));
   let grounding = response.grounding_metadata || {};

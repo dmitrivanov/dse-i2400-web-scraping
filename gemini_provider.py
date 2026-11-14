@@ -94,3 +94,16 @@ def generate(prompt: str, grounded: bool, requested_model: str) -> dict:
         if code == 400:
             raise GeminiError('Gemini rejected the model or grounding configuration; check model support') from None
         raise GeminiError('Gemini request failed or timed out; no automatic retry was made') from None
+
+
+def grounded_excerpt(grounding: dict | str, chunk_index: int) -> str | None:
+    """Return actual research segments associated with this provider source chunk."""
+    import json
+    if isinstance(grounding,str):
+        grounding=json.loads(grounding)
+    excerpts=[]
+    for support in (grounding or {}).get('grounding_supports',[]):
+        text=(support.get('segment') or {}).get('text')
+        if chunk_index in support.get('grounding_chunk_indices',[]) and text and text not in excerpts:
+            excerpts.append(text)
+    return ' '.join(excerpts)[:600] or None

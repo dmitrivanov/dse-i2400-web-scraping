@@ -190,3 +190,23 @@ deprecation warnings). Layout, existing Web/Library and mocked AI browser checks
 passed. MySQL temporary-table round-trip passed; all permanent row counts remained
 unchanged. Five fixture PDF pages were rendered and visually inspected. Zero live
 ScraperAPI/Gemini generation calls were made.
+
+## Current multi-engine and Library verification
+
+Three explicitly authorized ScraperAPI requests (one/engine) returned genuine HTML
+results: Bing10 unique URLs (run18), Yahoo7 (run19), DuckDuckGo10 (run20). Saved
+responses passed through the shared ETL/MySQL pipeline without additional requests.
+First-page persistence, normalization and provider/run associations were verified.
+New GUI transports use the generic URL API, not nonexistent structured-engine paths.
+Later pages are mock/fixture verified only; no extra credits were spent on pagination.
+
+Full Library now exposes208 Web observations plus19 Gemini sources, including older
+search runs, with table pagination and local lexical cosine ranking. A source identity
+catalog reuses exact URL identities while preserving all observations.121 source URL
+identities are not proof of121 canonical publisher destinations; opaque redirects
+remain unresolved. Prior-match labels use source IDs and earlier different runs.
+
+The Gemini navigation issue was reproduced before fixing the wrongly attached Library
+handlers; regression covers provider clicks and pending research/summary actions.
+Sources display first with actual grounding-associated excerpts. No new Gemini calls
+were made for this refinement. No automatic publisher screenshot capture is added.
