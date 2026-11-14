@@ -38,7 +38,8 @@ def test_interface_and_static_assets():
     response = client.get('/search')
     assert response.status_code == 200 and 'text/html' in response.headers['content-type']
     assert QUERY in response.text
-    assert 'Internet Search' in response.text and 'AI Search' in response.text
+    assert '>Web</button>' in response.text and '>AI</button>' in response.text
+    assert 'Google</option>' in response.text and 'Gemini' in response.text
     assert 'Details &amp; evidence' in response.text
     assert 'CCNY' not in response.text
     assert 'Follow the evidence' not in response.text

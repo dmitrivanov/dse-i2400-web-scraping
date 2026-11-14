@@ -270,3 +270,88 @@ PLAYWRIGHT_BROWSERS_PATH="$PWD/.venv/playwright-browsers" .venv/bin/python tests
 The browser check reads actual saved run 12 and Bing evidence, tests desktop/mobile,
 mode switching and saved history, and mocks submissions including 50 result cards,
 loading and validation errors. It never purchases pages or initiates capture.
+
+## Milestone 08 — interface, Library and Gemini preparation (current)
+
+The existing layout now uses **Web / AI**, a Google selector and **Pages: 1, 3, 5,
+10, 20**. One page remains the default. Choosing more pages uses the existing bounded
+collection workflow (target 50, stopping earlier on target, exhaustion or failure);
+the chosen number is a maximum, not a guaranteed page count. Collect 50 is also in
+the results toolbar. Refresh and Collect More keep their cache/append semantics and
+single explicit credit confirmation. Collect More's maximum includes previously saved
+pages. Reopening History or Library never makes an external request.
+
+Open **Library** in the header or sidebar. Filter All / Web / AI, page through saved
+items, and reopen results. Entries show query, type, provider, timestamp, result count
+and summary availability. Stored AI outputs show actual model names and text when
+present. Historical AI rows without a known run are separate entries, never linked
+by guesswork. This local database currently has no AI outputs. Help/README footer
+placeholders are plain text, not broken controls.
+
+Google is the only enabled GUI Web provider. Bing remains a legacy CLI provider.
+The [ScraperAPI Google SERP documentation](https://docs.scraperapi.com/structured-data-endpoints/search-and-insights/google/google-serp-api)
+describes Google JSON fields and pagination; it does not establish a Bing integration.
+The existing mandated `/v1` retrieval URL is unchanged (public examples use the
+unversioned route). No paid request was made for this milestone.
+
+Cards retain the provider URL as the clickable destination while hiding opaque
+redirect tokens from visible text. Direct URL hosts are displayable; opaque links
+use a neutral Website icon/label. Optional displayed_link text is preserved for new
+observations and only used for a matching direct host. Existing SERP captures are
+not individual website images: no website thumbnails, Open Graph fetching, automatic
+capture, external favicon service or third-party screenshot service were introduced.
+A neutral local icon avoids additional requests and broken-image failures.
+
+Apply `sql/milestone08.sql` after inspecting existing columns (each ALTER once):
+nullable `search_runs.search_type`, `search_results.displayed_link`, and nullable
+`run_id` foreign keys/indexes on both AI tables. Known historical Google/Bing/DDG
+engines classify as Web; unknown classifications stay NULL. Retrieval identities in
+`search_runs.provider` are preserved; Library displays the engine as provider name.
+The local migration preserved all six tables and their row counts. Startup does not
+migrate schemas. Existing AI query FKs/model fields are retained for compatibility;
+future writes should associate outputs through a matching run/query relationship.
+
+Deduplication is per run: URLs identify candidate sources, while each stored row is
+an observation with its own rank/snippet/page. Separate runs retain separate rows.
+There is no global canonical-source table or publisher crawling. Exact supplied-string
+comparison cannot establish that distinct Google redirect tokens represent distinct
+publisher pages; tracking variants can remain separate. Evidence counts in Details
+retain this distinction; cache reuse remains exact-query/provider based.
+
+### Gemini configuration, no execution yet
+
+Set server-side `GEMINI_API_KEY` and `GEMINI_MODEL` in `.env` or the process environment.
+Keys are never returned by the GUI/API. `.env.example` uses `gemini-3.5-flash-lite`, a
+[documented model with Search grounding](https://aistudio.google.com/docs/models/gemini-3.5-flash-lite).
+The local existing setting remains `gemini-2.5-flash`; [Google marks it deprecated,
+with existing-user access limited until December 1, 2026](https://aistudio.google.com/docs/models/gemini-2.5-flash).
+Change `GEMINI_MODEL` explicitly before the next execution milestone. Configuration
+syntax validation does not prove account/model availability or grounding access.
+
+`gemini_provider.validate_configuration()` validates settings locally and returns only
+provider/model/readiness metadata. `google-genai` is not installed and is not needed
+until actual execution is implemented. No Gemini calls or new dependencies were added.
+AI mode shows Gemini as coming soon and does not run searches or summarization.
+
+Next milestone proposal: original query → standardized research prompt → Gemini with
+Google Search grounding → saved actual response/model and clickable grounded sources
+→ separate deliberate Summarize action → saved summary with response provenance.
+Sources must come from actual grounding metadata or independently verifiable URLs,
+never invented model citations. Confirm current SDK/model documentation then.
+
+Verification commands (run the local app first for the second command):
+
+```sh
+.venv/bin/python -m pytest -q
+PLAYWRIGHT_BROWSERS_PATH="$PWD/.venv/playwright-browsers" .venv/bin/python tests/verify_interface.py
+.venv/bin/python -c 'from gemini_provider import validate_configuration; print(validate_configuration())'
+```
+
+Remaining assignment gaps: no Gemini execution/grounding or summarization; no verified
+50 distinct publisher destinations; no successful authentic Google screenshot/OCR;
+no additional verified GUI engine or individual website thumbnails. Prior milestone
+sections above describe historical UI labels and defaults superseded here.
+
+Milestone 08 verification: **200 automated tests passed**, plus browser checks of
+real saved run 12, evidence links, mobile, Library/filter/pagination, mocked 50-card
+search and AI outputs, and declined credit confirmation. No external provider calls.

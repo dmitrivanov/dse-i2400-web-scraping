@@ -61,3 +61,17 @@ def get_collection_page_limit() -> int:
     if not 1 <= value <= 20:
         raise ValueError("COLLECTION_MAX_PAGES must be an integer from 1 to 20")
     return value
+
+
+def get_gemini_config() -> dict[str, str]:
+    """Validate server-only settings locally; never contact Gemini or echo a key."""
+    import re
+
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+    key = os.getenv("GEMINI_API_KEY", "").strip()
+    if not key:
+        raise ValueError("GEMINI_API_KEY is required")
+    model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
+    if not re.fullmatch(r"gemini-[a-zA-Z0-9][a-zA-Z0-9._-]{0,90}", model):
+        raise ValueError("GEMINI_MODEL must be a Gemini model identifier")
+    return {"api_key": key, "model": model}

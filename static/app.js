@@ -37,28 +37,35 @@ function safeUrl(value) {
 function renderResults() {
   const list = byId('results'); list.replaceChildren();
   if (!current) return;
-  const rows = current.results.filter(row => !byId('organic-only').checked || organic(row));
+  const rows = current.results.filter(row => byId('all-observations').checked || organic(row));
   byId('result-count').textContent = `${rows.length} shown / ${current.results.length} stored`;
   byId('empty-state').hidden = rows.length > 0;
   byId('empty-state').textContent = current.results.length ? 'No observations match this filter.' : 'No observations were saved for this run. See its diagnostics above.';
   for (const row of rows) {
     const article = node('article', null, 'result');
-    const urlValue = safeUrl(row.normalized_url || row.original_url);
+    const urlValue = safeUrl(row.original_url) || safeUrl(row.normalized_url);
     const domain = urlValue ? new URL(urlValue).hostname.replace(/^www\./, '') : '';
-    article.append(node('div', row.destination_unverified ? 'Google redirect · destination unverified' : domain, 'source'));
+    const source = node('div', null, 'source');
+    const icon = node('span', '◉', 'website-icon'); icon.setAttribute('aria-hidden', 'true'); source.append(icon);
+    // A displayed_link is provider display text, never a replacement destination.
+    const display = typeof row.displayed_link === 'string' ? row.displayed_link.split(/[\s›>]/)[0] : '';
+    const displayUrl = safeUrl(display.startsWith('http') ? display : `https://${display}`);
+    const displayDomain = displayUrl ? new URL(displayUrl).hostname.replace(/^www\./, '') : '';
+    source.append(node('span', row.destination_unverified ? 'Website' : (displayDomain === domain ? displayDomain : domain) || 'Website'));
+    article.append(source);
     const heading = node('h3');
-    const url = safeUrl(row.normalized_url);
-    if (url) {
-      const link = node('a', row.title || 'Untitled result'); link.href = url; link.target = '_blank'; link.rel = 'noopener noreferrer'; heading.append(link);
+    if (urlValue) {
+      const link = node('a', row.title || 'Untitled result'); link.href = urlValue; link.target = '_blank'; link.rel = 'noopener noreferrer'; heading.append(link);
     } else heading.textContent = row.title || 'Untitled result';
     article.append(heading);
-    if (urlValue) { const address = node('a', urlValue, 'destination'); address.href = urlValue; address.target = '_blank'; address.rel = 'noopener noreferrer'; article.append(address); }
     article.append(node('p', row.snippet || 'No snippet provided.'));
     list.append(article);
   }
 }
 function showRun(data) {
   current = data;
+  byId('library').hidden = true;
+  byId('search-form').closest('section').hidden = false;
   const run = data.run;
   byId('query').value = run.query_text;
   setSearchType('internet');
@@ -67,7 +74,7 @@ function showRun(data) {
   byId('run-status').textContent = `#${run.id} · ${run.status}`;
   byId('run-status').className = `badge ${run.status === 'failed' ? 'failed' : ''}`;
   const values = byId('diagnostic-values'); values.replaceChildren();
-  for (const [label, value] of [['Provider', run.engine === 'google' ? 'Google · ScraperAPI' : run.engine], ['Saved', run.started_at || run.created_at || 'Not recorded'], ['Stored results', run.final_count], ['Pages', data.collection?.pages], ['Page budget', data.collection?.max_pages], ['Direct URLs', run.direct_url_count], ['Unverified Google redirects', run.google_redirect_count], ['Error', run.error_message]].filter(([,value]) => value !== undefined && value !== null && value !== '')) {
+  for (const [label, value] of [['Provider', run.engine === 'google' ? 'Google · ScraperAPI' : run.engine], ['Saved', run.started_at || run.created_at || 'Not recorded'], ['Stored results', run.final_count], ['Pages', data.collection?.pages], ['Maximum pages', data.collection?.max_pages], ['Direct URLs', run.direct_url_count], ['Unverified Google redirects', run.google_redirect_count], ['Error', run.error_message]].filter(([,value]) => value !== undefined && value !== null && value !== '')) {
     const item = node('div'); item.append(node('dt', label), node('dd', value)); values.append(item);
   }
   const links = byId('artifact-links'); links.replaceChildren();
@@ -77,11 +84,11 @@ function showRun(data) {
     }
   }
   let warning = data.warning || '';
-  if (data.reused) warning = `Reused saved run #${run.id}. No paid request was made.`;
+  if (data.reused) warning = 'Opened saved results.';
   if (data.target_count === 50 && !run.satisfies_50) warning = [warning, `Saved ${run.final_count} distinct supplied URLs, including ${run.direct_url_count ?? 0} direct URLs. The conservative 50-direct-URL target is not yet satisfied.`].filter(Boolean).join(' ');
   if (run.satisfies_50) warning = [warning, 'This saved collection contains at least 50 distinct direct URL addresses; publisher content has not been independently verified.'].filter(Boolean).join(' ');
   if (run.error_message || run.status === 'failed' || !run.final_count) warning = [warning, run.error_message || 'This run produced zero usable organic URLs. The engine may be blocked or its HTML unsupported.'].filter(Boolean).join(' ');
-  if (run.google_redirect_count) warning = [warning, `${run.google_redirect_count} Google redirect URLs have unverified destinations; different tokens do not prove different publisher pages.`].filter(Boolean).join(' ');
+
   message(warning);
   renderResults();
   updateActions();
@@ -112,7 +119,7 @@ async function loadHistory(initial = false) {
 }
 function updateActions() {
   const collect = byId('mode').value === 'collect';
-  byId('max-pages').disabled = busy || !collect;
+  byId('max-pages').disabled = busy;
   const sameQuery = current?.run.query_text === byId('query').value;
   const compatible = current?.run.provider === 'google:scraperapi:structured';
   byId('collect-more').disabled = busy || !sameQuery || !compatible || current.run.satisfies_50;
@@ -121,17 +128,17 @@ function updateActions() {
 }
 function setBusy(value) {
   busy = value; byId('loading').hidden = !value;
-  for (const id of ['query', 'mode', 'search-button', 'refresh-history', 'refresh-search', 'internet-mode', 'ai-mode']) byId(id).disabled = value;
+  for (const id of ['query', 'engine', 'mode', 'search-button', 'refresh-history', 'refresh-search', 'internet-mode', 'ai-mode', 'collect50', 'open-library', 'sidebar-library']) byId(id).disabled = value;
   document.querySelectorAll('.history-item').forEach(item => item.disabled = value);
   updateActions();
 }
 async function submitSearch(refresh = false, resumeRunId = null) {
   if (busy || searchType === 'ai') return;
   if (!byId('query').value.trim()) { message('Enter a research query.'); return; }
-  const mode = resumeRunId ? 'collect' : byId('mode').value;
+  const mode = resumeRunId || Number(byId('max-pages').value) > 1 ? 'collect' : byId('mode').value;
   if (resumeRunId) byId('mode').value = 'collect';
   const pages = mode === 'collect' ? Number(byId('max-pages').value) : 1;
-  if (!Number.isInteger(pages) || pages < 1 || pages > 20) { message('Choose a page budget from 1 to 20.'); return; }
+  if (!Number.isInteger(pages) || pages < 1 || pages > 20) { message('Choose a page limit from 1 to 20.'); return; }
   setBusy(true); message('');
   byId('loading-text').textContent = ' Checking saved collections; only authorized pages will be requested…';
   const baseline = Math.max(0, ...Array.from(document.querySelectorAll('.history-item')).map(item => Number(item.dataset.id)));
@@ -149,7 +156,7 @@ async function submitSearch(refresh = false, resumeRunId = null) {
     } catch { /* Final request/error display remains authoritative. */ }
     finally { progressBusy = false; }
   }, 2000);
-  const body = {query:byId('query').value, engine:'google', mode, max_pages:pages, refresh, resume_run_id:resumeRunId, allow_paid:false};
+  const body = {query:byId('query').value, engine:byId('engine').value, mode, max_pages:pages, refresh, resume_run_id:resumeRunId, allow_paid:false};
   try {
     let data;
     try { data = await api('/api/search', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)}, pages * 75000 + 15000); }
@@ -169,10 +176,10 @@ byId('refresh-search').addEventListener('click', () => submitSearch(true));
 byId('collect-more').addEventListener('click', () => submitSearch(false, current.run.id));
 byId('mode').addEventListener('change', updateActions);
 byId('query').addEventListener('input', updateActions);
-byId('organic-only').addEventListener('change', renderResults);
+byId('all-observations').addEventListener('change', renderResults);
 byId('refresh-history').addEventListener('click', () => loadHistory());
 loadHistory();
-api('/api/search-options').then(options => { byId('max-pages').value = options.collection_max_pages; updateActions(); }).catch(error => message(error.message));
+updateActions();
 
 byId('capture-run').addEventListener('click', async () => {
   if (busy || !current) return;
@@ -196,11 +203,13 @@ function toggleSidebar(open) {
 }
 function setSearchType(type) {
   searchType = type;
+  byId('library').hidden = true;
+  byId('search-form').closest('section').hidden = false;
   const ai = type === 'ai';
   byId('internet-mode').setAttribute('aria-pressed', String(!ai));
   byId('ai-mode').setAttribute('aria-pressed', String(ai));
   byId('internet-controls').hidden = ai;
-  byId('credit-note').hidden = ai;
+  byId('ai-provider').hidden = !ai;
   byId('ai-results').hidden = !ai;
   byId('internet-results').hidden = ai || !current;
   document.body.classList.toggle('has-results', !!current || ai);
@@ -227,3 +236,49 @@ document.addEventListener('keydown', event => {
   if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
   else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
 });
+
+let libraryPage = 1;
+async function loadLibrary() {
+  if (busy) return;
+  byId('library').hidden = false;
+  byId('search-form').closest('section').hidden = true;
+  byId('internet-results').hidden = true;
+  byId('ai-results').hidden = true;
+  document.body.classList.add('has-results');
+  byId('saved-ai').replaceChildren(); message('');
+  byId('library-status').textContent = 'Loading…';
+  byId('library-prev').disabled = true; byId('library-next').disabled = true;
+  try {
+    const filter = byId('library-filter').value;
+    const data = await api(`/api/library?page=${libraryPage}${filter ? `&search_type=${filter}` : ''}`);
+    const list = byId('library-list'); list.replaceChildren();
+    for (const item of data.items) {
+      const button = node('button', null, 'library-item');
+      button.append(node('strong', item.query_text), node('small', `${item.search_type === 'web' ? 'Web' : item.search_type === 'ai' ? 'AI' : 'Unknown'} · ${item.provider || 'Unknown provider'} · ${new Date(item.created_at).toLocaleString()} · ${item.result_count} results · ${item.summary_available ? 'Summary available' : 'No summary'}`));
+      button.addEventListener('click', async () => {
+        if (item.kind === 'run' && item.search_type !== 'ai') { await openRun(item.id); return; }
+        try {
+          const output = await api(`/api/library/${item.kind}/${item.id}`);
+          const area = byId('saved-ai'); area.replaceChildren(node('h2', item.query_text));
+          for (const response of output.responses) {
+            const details = node('details'); details.append(node('summary', `${response.provider} · ${response.model_name || 'Model not recorded'}`), node('pre', response.response_text)); area.append(details);
+          }
+          for (const summary of output.summaries) area.append(node('h3', 'Saved summary'), node('pre', summary.summary_text));
+          if (!output.responses.length && !output.summaries.length) area.append(node('p', 'No saved AI output for this run.'));
+        } catch (error) { byId('library-status').textContent = error.message; }
+      });
+      list.append(button);
+    }
+    byId('library-status').textContent = data.items.length ? '' : 'No saved items.';
+    byId('library-page').textContent = `Page ${data.page}`;
+    byId('library-prev').disabled = libraryPage <= 1;
+    byId('library-next').disabled = !data.has_more;
+  } catch (error) { byId('library-status').textContent = error.message; }
+}
+for (const id of ['open-library', 'sidebar-library']) byId(id).addEventListener('click', () => { toggleSidebar(false); libraryPage = 1; loadLibrary(); });
+byId('close-library').addEventListener('click', () => setSearchType(searchType));
+byId('library-filter').addEventListener('change', () => { libraryPage = 1; loadLibrary(); });
+byId('library-prev').addEventListener('click', () => { libraryPage--; loadLibrary(); });
+byId('library-next').addEventListener('click', () => { libraryPage++; loadLibrary(); });
+byId('collect50').addEventListener('click', () => { byId('mode').value = 'collect'; submitSearch(); });
+byId('max-pages').addEventListener('change', () => { byId('mode').value = 'search'; updateActions(); });

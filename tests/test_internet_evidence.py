@@ -134,7 +134,7 @@ def test_insert_records_keep_mysql_assigned_ids_and_page_numbers():
     for row in rows:row.pop('id')
     db.insert_search_results(connection,15,rows)
     assert [row['id'] for row in rows]==[41,43]
-    assert all(call.args[1][0]==15 and call.args[1][-1]==1 for call in cursor.execute.call_args_list)
+    assert all(call.args[1][0]==15 and call.args[1][-2]==1 and call.args[1][-1] is None for call in cursor.execute.call_args_list)
 
 
 @pytest.mark.parametrize('value',['true',1,None])

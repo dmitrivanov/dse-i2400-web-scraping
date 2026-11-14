@@ -200,3 +200,44 @@ cache-first POST contract, explicit paid confirmation, per-page progress polling
 and independent capture action. tests/verify_interface.py exercises the real local
 frontend with saved MySQL reads and intercepted search POSTs, including 50-card
 rendering. This is a browser smoke check, not new provider-result verification.
+
+## Milestone 08 (current)
+
+Presentation refinements preserve the existing layout. Google alone is enabled in
+Web mode; Gemini is a disabled future AI choice. Pages defaults to 1; values above
+1 select the existing collection mode, bounded by the selected maximum and target50.
+No new retrieval loop exists. Credit confirmation remains server-guarded. Cards hide
+opaque tokens while retaining original provider hrefs. displayed_link is nullable
+observation metadata, not a canonical identity or substitute URL. No website image
+fetching is performed: existing artifacts capture whole SERPs, not publisher pages.
+
+`library.py` is an isolated read-only Library module: parameterized SQL UNIONs runs
+and unlinked historical AI responses/summaries, with bounded LIMIT/OFFSET pagination
+and Web/AI filtering. GET /api/library returns items/page/has_more; GET
+/api/library/{run|response|summary}/{id} reads stored AI text/model identifiers.
+Web reopen uses the existing run detail endpoint. Output rendering uses textContent,
+not HTML or model-generated markup. Library reads cannot invoke providers or capture.
+
+Schema migration08 adds nullable run search_type, result displayed_link, and nullable
+run_id FKs on AI tables; no tables dropped/recreated. New Web writes classify the run.
+Known historical engine values support Web classification; unknown/null values are
+retained. Existing provider retrieval identity stays intact; Library provider labels
+come from known engines or explicitly AI-classified runs. Historical unlinked AI
+outputs remain separate entries. Future AI writes must validate run/query consistency,
+store actual model identifiers and preserve summary-to-response provenance. No AI
+writes or linkage guesses are implemented now.
+
+Source identity remains URL-based and per run, distinct conceptually from observations.
+No global canonical table is justified here. Multiple runs preserve their own ranks
+and snippets; cache lookup may reuse one sufficient completed exact-query/provider
+run. Opaque redirects, tracking variants and possible equivalent publisher URLs remain
+unresolved; distinct tokens are not verified canonical identities.
+
+`config.get_gemini_config` and `gemini_provider.validate_configuration` only validate
+server settings; no SDK import, network request or execution endpoint. Existing SDK
+check found google-genai absent; defer installation until needed. The example model
+is gemini-3.5-flash-lite; the existing local gemini-2.5-flash setting was preserved,
+with deprecation documented in README. Grounding and model access are not live-tested.
+The future flow is original query → research prompt → grounded Gemini response with
+actual metadata sources → stored run-linked output → explicit Summarize → stored
+summary/provenance. Provider prose alone cannot establish a citation URL.

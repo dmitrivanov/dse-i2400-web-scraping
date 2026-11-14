@@ -39,8 +39,8 @@ def insert_search_query(connection: MySQLConnection, query: str) -> int:
 def insert_search_run(connection: MySQLConnection, query_id: int, engine: str = "google", provider: str | None = None) -> int:
     """Start an engine-specific run for an existing query."""
     with connection.cursor() as cursor:
-        cursor.execute("INSERT INTO search_runs (query_id, engine, status, provider) VALUES (%s, %s, %s, %s)",
-                       (query_id, engine, "running", provider))
+        cursor.execute("INSERT INTO search_runs (query_id, engine, status, provider, search_type) VALUES (%s, %s, %s, %s, %s)",
+                       (query_id, engine, "running", provider, "web" if engine in {"google", "bing"} else None))
         return cursor.lastrowid
 
 
@@ -52,10 +52,10 @@ def insert_search_results(connection: MySQLConnection, run_id: int, results: lis
         for row in results:
             cursor.execute(
                 """INSERT INTO search_results
-                (run_id, title, original_url, normalized_url, snippet, result_rank, is_ad, is_duplicate, page_number)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                (run_id, title, original_url, normalized_url, snippet, result_rank, is_ad, is_duplicate, page_number, displayed_link)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                 (run_id, row["title"], row["original_url"], row["normalized_url"], row["snippet"],
-                 row["result_rank"], row["is_ad"], row["is_duplicate"], row.get("page_number")),
+                 row["result_rank"], row["is_ad"], row["is_duplicate"], row.get("page_number"), row.get("displayed_link")),
             )
             row["id"] = cursor.lastrowid
 

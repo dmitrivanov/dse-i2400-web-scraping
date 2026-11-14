@@ -38,7 +38,7 @@ def parse_organic_results(data: dict) -> list[dict]:
     for item in data["organic_results"]:
         if not isinstance(item, dict) or not isinstance(item.get("link"), str) or not item["link"]:
             raise SearchError("Structured Google organic result is missing a URL")
-        for field in ("title", "snippet"):
+        for field in ("title", "snippet", "displayed_link"):
             if item.get(field) is not None and not isinstance(item[field], str):
                 raise SearchError("Structured Google result contains an invalid text field")
         position = item.get("position")
@@ -46,6 +46,8 @@ def parse_organic_results(data: dict) -> list[dict]:
             raise SearchError("Structured Google result contains an invalid position")
         rows.append({"title": item.get("title"), "original_url": item["link"],
                      "snippet": item.get("snippet"), "result_rank": position, "is_ad": False})
+        if item.get("displayed_link") is not None:
+            rows[-1]["displayed_link"] = item["displayed_link"]
     return rows
 
 

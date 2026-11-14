@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS search_runs (
     id BIGINT NOT NULL AUTO_INCREMENT,
     query_id BIGINT NOT NULL,
     engine VARCHAR(50) NOT NULL,
+    search_type VARCHAR(10) NULL,
     provider VARCHAR(100) NULL,
     collection_metadata JSON NULL,
     status VARCHAR(30) NOT NULL,
@@ -38,6 +39,7 @@ CREATE TABLE IF NOT EXISTS search_results (
     original_url TEXT NOT NULL,
     normalized_url TEXT NULL,
     snippet TEXT NULL,
+    displayed_link TEXT NULL,
     result_rank INT NULL,
     page_number INT NULL,
     is_ad BOOLEAN NULL DEFAULT NULL,
@@ -64,11 +66,15 @@ CREATE TABLE IF NOT EXISTS capture_artifacts (
 CREATE TABLE IF NOT EXISTS ai_responses (
     id BIGINT NOT NULL AUTO_INCREMENT,
     query_id BIGINT NOT NULL,
+    run_id BIGINT NULL,
     provider VARCHAR(50) NOT NULL,
     model_name VARCHAR(100) NULL,
     response_text LONGTEXT NOT NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
+    INDEX idx_ai_responses_run_id (run_id),
+    CONSTRAINT fk_ai_responses_run_id FOREIGN KEY (run_id)
+        REFERENCES search_runs(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
     INDEX idx_ai_responses_query_id (query_id),
     CONSTRAINT fk_ai_responses_query_id FOREIGN KEY (query_id)
         REFERENCES search_queries(id) ON DELETE RESTRICT ON UPDATE RESTRICT
@@ -77,10 +83,14 @@ CREATE TABLE IF NOT EXISTS ai_responses (
 CREATE TABLE IF NOT EXISTS ai_summaries (
     id BIGINT NOT NULL AUTO_INCREMENT,
     query_id BIGINT NOT NULL,
+    run_id BIGINT NULL,
     summary_text LONGTEXT NOT NULL,
     summarizer VARCHAR(100) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
+    INDEX idx_ai_summaries_run_id (run_id),
+    CONSTRAINT fk_ai_summaries_run_id FOREIGN KEY (run_id)
+        REFERENCES search_runs(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
     INDEX idx_ai_summaries_query_id (query_id),
     CONSTRAINT fk_ai_summaries_query_id FOREIGN KEY (query_id)
         REFERENCES search_queries(id) ON DELETE RESTRICT ON UPDATE RESTRICT

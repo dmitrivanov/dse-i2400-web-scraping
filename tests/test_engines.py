@@ -54,7 +54,7 @@ def test_db_provider_is_parameterized():
     connection=MagicMock();cursor=connection.cursor.return_value.__enter__.return_value
     cursor.lastrowid=12
     assert db.insert_search_run(connection,10,'bing','bing:direct:html')==12
-    assert cursor.execute.call_args.args[1]==(10,'bing','running','bing:direct:html')
+    assert cursor.execute.call_args.args[1]==(10,'bing','running','bing:direct:html','web')
 
 
 @pytest.mark.parametrize('engine,fetcher',[('duckduckgo',None),('google','direct'),('bing','scraperapi')])

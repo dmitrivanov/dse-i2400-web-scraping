@@ -4,24 +4,25 @@
 <button id="sidebar-backdrop" aria-label="Close history" hidden></button>
 <aside id="sidebar" class="history" aria-label="Search history" hidden>
 <div class="section-heading"><h2>History</h2><button id="close-history" type="button" aria-label="Close history">×</button></div>
-<button id="new-search" type="button">New search</button><button id="refresh-history" class="text-button" type="button">Reload history</button>
+<button id="sidebar-library" type="button">Library</button><button id="new-search" type="button">New search</button><button id="refresh-history" class="text-button" type="button">Reload history</button>
 <p id="history-status" role="status"></p><div id="history-list"></div></aside>
-<header><button id="toggle-history" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Open search history">☰</button><a class="brand" href="/search">MY_CUSTOM_BOT</a></header>
+<header><button id="toggle-history" type="button" aria-controls="sidebar" aria-expanded="false" aria-label="Open search history">☰</button><a class="brand" href="/search">MY_CUSTOM_BOT</a><button id="open-library" class="text-button" type="button">Library</button></header>
 <main id="main">
 <section class="search-panel" aria-label="Search composer">
 <form id="search-form">
-<div class="mode-tabs" role="group" aria-label="Search type"><button id="internet-mode" type="button" aria-pressed="true">Internet Search</button><button id="ai-mode" type="button" aria-pressed="false">AI Search</button></div>
+<div class="mode-tabs" role="group" aria-label="Search type"><button id="internet-mode" type="button" aria-pressed="true">Web</button><button id="ai-mode" type="button" aria-pressed="false">AI</button></div>
 <label for="query" class="sr-only">Research query</label><textarea id="query" name="query" rows="2" maxlength="1000" required placeholder="What would you like to search?">childhood cancer early diagnosis methods</textarea>
-<div class="controls" id="internet-controls"><label class="sr-only" for="mode">Collection target</label><select id="mode"><option value="search">Normal search</option><option value="collect">Collect 50</option></select><label for="max-pages">Page budget</label><input id="max-pages" type="number" min="1" max="20" value="10" disabled><button id="search-button" type="submit">Search ↗</button></div>
-<p class="hint" id="credit-note">Saved collections open free. New pages require paid confirmation.</p>
+<div class="controls" id="internet-controls"><label class="sr-only" for="engine">Web provider</label><select id="engine"><option value="google">Google</option></select><label class="sr-only" for="mode">Collection target</label><select id="mode" hidden><option value="search">Search</option><option value="collect">Collect 50</option></select><label for="max-pages">Pages</label><select id="max-pages"><option>1</option><option>3</option><option>5</option><option>10</option><option>20</option></select><button id="search-button" type="submit">Search ↗</button></div>
+<div id="ai-provider" hidden><label for="ai-engine" class="sr-only">AI provider</label><select id="ai-engine" disabled><option>Gemini · coming soon</option></select></div>
 </form>
 <div id="loading" role="status" hidden><span class="spinner"></span><span id="loading-text">Searching…</span></div>
 </section>
 <div id="message" role="status" aria-live="polite" hidden></div>
 <section id="ai-results" hidden aria-label="AI Search"><h2>AI Search is not available yet.</h2><p>No AI providers are connected.</p><div id="ai-summary" hidden></div><nav id="ai-provider-links" hidden aria-label="AI provider responses"></nav><div id="ai-responses" hidden></div></section>
 <section id="internet-results" hidden aria-label="Search results">
-<div class="section-heading results-heading"><h1>Results <span id="result-count"></span></h1><label class="filter"><input id="organic-only" type="checkbox" checked> Unique organic</label></div>
-<div class="run-actions"><button id="refresh-search" type="button">Refresh · paid</button><button id="collect-more" type="button" disabled>Collect More · paid</button></div>
+<div class="section-heading results-heading"><h1>Results <span id="result-count"></span></h1><label class="filter"><input id="all-observations" type="checkbox"> All observations</label></div>
+<div class="run-actions"><button id="collect50" type="button">Collect 50</button><button id="refresh-search" type="button">Refresh</button><button id="collect-more" type="button" disabled>Collect More</button></div>
 <details class="details"><summary>Details &amp; evidence</summary><span id="run-status"></span><dl id="diagnostic-values"></dl><div id="artifact-links"></div><button id="capture-run" type="button" disabled>Capture screenshot &amp; OCR</button></details>
 <p id="empty-state" hidden>No results saved.</p><div id="results"></div></section>
-</main></body></html>
+<section id="library" hidden aria-labelledby="library-heading"><div class="section-heading"><h1 id="library-heading">Library</h1><button id="close-library" type="button">Back to search</button></div><label class="sr-only" for="library-filter">Search type</label><select id="library-filter"><option value="">All</option><option value="web">Web</option><option value="ai">AI</option></select><p id="library-status" role="status"></p><div id="library-list"></div><div class="run-actions"><button id="library-prev" type="button">Previous</button><span id="library-page"></span><button id="library-next" type="button">Next</button></div><div id="saved-ai"></div></section>
+</main><footer><span>MY_CUSTOM_BOT</span><span>Help &amp; README · coming soon</span></footer></body></html>
