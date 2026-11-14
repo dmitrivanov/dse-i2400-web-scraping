@@ -1,4 +1,7 @@
-# Assignment compliance — Milestone 05D
+# Assignment compliance — Milestone 09
+
+The Milestone 09 verification update at the end is current. Earlier matrices and
+counts retain historical evidence; they do not describe the current AI feature set.
 
 ## Milestone 06 verification update
 
@@ -154,3 +157,36 @@ not labeled as provider SERP captures.
   budget were verified without submitting a search. Artifact 1 screenshot/OCR routes
   both returned HTTP 200. No browser errors, mobile overflow or POST/search requests.
   Local evidence: artifacts/milestone05d_gui.png (ignored by Git).
+
+## Milestone 09 verification update (current)
+
+- UI composer/footer/sidebar polish is implemented and browser-tested at desktop,
+  tablet and mobile widths, focus/resizing and enlarged reflow.
+- Web page maximum is now 1–50 (default1), independently from explicit Collect50.
+  Cache scope/append, pagination, deduplication, failures and request authorization
+  are mocked/tested. Existing saved runs12/15 and Bing artifact/OCR remain accessible.
+- Google structured search remains the only functional GUI Web engine. Official
+  ScraperAPI structured docs did not establish usable Bing/Yahoo/DDG integrations;
+  these remain unavailable. Existing Bing CLI is preserved. No new live paid probes.
+- Gemini grounded research, actual source metadata, model/prompt/token persistence,
+  separate cached summaries and Markdown/PDF export are implemented. Mocks plus
+  real MySQL SQL on connection-local temporary tables verify the entire workflow.
+  Research/source/status and summary provenance transactions are verified. Permanent
+  fixture AI rows remain zero. No live Gemini request or summary was purchased.
+- PDF fixture wrapping/page breaks/source hyperlinks were generated and visually
+  reviewed; fixture exports are test material, not fabricated research evidence.
+- Account-specific Gemini model availability, quotas, grounding quality and summary
+  quality remain **not live-verified**. Current local gemini-2.5-flash deprecation is
+  documented; no model/billing fallback or background execution is implemented.
+- 50 distinct publisher destinations and authentic Google capture/OCR remain unverified.
+  This milestone is not a claim of complete assignment compliance. Source URIs from
+  Gemini may also be provider redirects; they are never labeled independently verified.
+
+See AI_SEARCH.md for reproducible mocked checks and one explicitly authorized live
+test. Earlier counts and feature states above are historical, superseded by this update.
+
+Milestone 09 final verification: **235 automated tests passed** (two dependency
+deprecation warnings). Layout, existing Web/Library and mocked AI browser checks
+passed. MySQL temporary-table round-trip passed; all permanent row counts remained
+unchanged. Five fixture PDF pages were rendered and visually inspected. Zero live
+ScraperAPI/Gemini generation calls were made.

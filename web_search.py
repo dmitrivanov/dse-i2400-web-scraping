@@ -24,7 +24,7 @@ class SearchRequest(BaseModel):
     engine: Literal["google"] = "google"
     fetcher: Literal["scraperapi"] = "scraperapi"
     mode: Literal["search", "collect"] = "search"
-    max_pages: int | None = Field(default=None, ge=1, le=20, strict=True)
+    max_pages: int | None = Field(default=None, ge=1, le=50, strict=True)
     refresh: bool = False
     allow_paid: bool = Field(default=False, strict=True)
     resume_run_id: int | None = Field(default=None, ge=1, strict=True)
@@ -32,12 +32,8 @@ class SearchRequest(BaseModel):
     @model_validator(mode="after")
     def validate_search(self):
         validate_query(self.query)
-        if self.mode == "search":
-            if self.max_pages not in (None, 1):
-                raise ValueError("Normal search uses one page; choose Collect 50 for pagination")
-            self.max_pages = 1
-        elif self.max_pages is None:
-            self.max_pages = get_collection_page_limit()
+        if self.max_pages is None:
+            self.max_pages = 1 if self.mode == "search" else get_collection_page_limit()
         if self.resume_run_id is not None and (self.mode != "collect" or self.refresh):
             raise ValueError("Collect More requires collect mode without refresh")
         return self
@@ -145,7 +141,7 @@ def artifact_file(artifact_id: int, kind: Literal["screenshot", "ocr"]):
 @router.get("/api/search-options")
 def search_options():
     try:
-        return {"collection_max_pages": get_collection_page_limit(), "max_allowed_pages": 20}
+        return {"collection_max_pages": get_collection_page_limit(), "max_allowed_pages": 50}
     except ValueError:
         raise HTTPException(400, "Collection page configuration is invalid") from None
 

@@ -48,26 +48,48 @@ def run_search(query: str, max_pages: int | None = None, fetcher: str | None = N
         raise CollectionError("Mode must be search or collect")
     target = 50 if mode == "collect" else 1
     limit = get_collection_page_limit() if max_pages is None and mode == "collect" else (1 if max_pages is None else max_pages)
-    if type(limit) is not int or not 1 <= limit <= 20:
-        raise CollectionError("Page limit must be an integer from 1 to 20")
-    if mode == "search" and limit != 1:
-        raise CollectionError("Normal search uses one page; choose Collect 50 for pagination")
+    if type(limit) is not int or not 1 <= limit <= 50:
+        raise CollectionError("Page limit must be an integer from 1 to 50")
     if resume_run_id is not None and (mode != "collect" or refresh):
         raise CollectionError("Collect More requires collect mode without refresh")
     saved = None
+    exhausted_saved = False
     if not refresh and resume_run_id is None:
         saved = find_saved_collection(query, engine, provider, target)
+        if saved is None and mode == "collect":
+            partial = find_saved_collection(query, engine, provider, 1)
+            if partial:
+                meta = collection_metadata_for_run(partial["run"])
+                known_pages = meta.get("pages")
+                if type(known_pages) is int and known_pages > 0:
+                    if known_pages >= limit or meta.get("stop_reason") in {"provider_exhausted", "empty_page", "no_unique_progress"}:
+                        saved, exhausted_saved = partial, True
+                    elif type(meta.get("next_start")) is int:
+                        saved, resume_run_id = partial, partial["run"]["id"]
     existing, start, pages = [], 0, 0
     if resume_run_id is not None:
         saved = db.get_search_run(resume_run_id)
         if (not saved or saved["run"]["query_text"] != query or saved["run"]["engine"] != engine
                 or provider_for_run(saved["run"]) != provider or saved["run"]["status"] not in {"completed", "failed"}):
             raise CollectionError("Collect More requires a matching saved query/provider and a finished run")
+    if saved and mode == "search" and limit > 1 and resume_run_id is None:
+        meta = collection_metadata_for_run(saved["run"])
+        saved_pages = meta.get("pages", 0)
+        if type(saved_pages) is not int:
+            saved_pages = 0
+        scope_satisfied = saved_pages >= limit or (saved_pages > 0 and meta.get("stop_reason") in {"provider_exhausted", "empty_page", "no_unique_progress"})
+        if not scope_satisfied:
+            if saved_pages > 0 and type(meta.get("next_start")) is int:
+                resume_run_id = saved["run"]["id"]
+            else:
+                saved = None
+    else:
+        scope_satisfied = True
     if saved:
         existing, counts = clean_results(saved["results"], preserve_urls=engine == "google")
         evidence = url_evidence_counts(existing)
         qualifies = evidence["direct_url_count"] if target == 50 else counts["final_count"]
-        if saved["run"]["status"] == "completed" and (qualifies >= target or (resume_run_id is None and counts["final_count"] >= target)):
+        if scope_satisfied and saved["run"]["status"] == "completed" and (exhausted_saved or qualifies >= target or (resume_run_id is None and counts["final_count"] >= target)):
             summary = {"run_id": saved["run"]["id"], "engine": engine, "provider": provider,
                        "fetcher": fetcher, "status": "completed", "pages": 0, "reused": True,
                        "target_count": target, "observed_target_met": counts["final_count"] >= target,
@@ -148,8 +170,8 @@ def run_search(query: str, max_pages: int | None = None, fetcher: str | None = N
             previous = counts["final_count"]
             observations, counts, evidence, metadata = combined, new_counts, new_evidence, new_metadata
             pages = page + 1
-            if mode == "search": stop_reason = "one_page"; break
-            if evidence["direct_url_count"] >= target: stop_reason = "target_reached"; break
+            if mode == "search" and limit == 1: stop_reason = "one_page"; break
+            if mode == "collect" and evidence["direct_url_count"] >= target: stop_reason = "target_reached"; break
             if not rows: stop_reason = "empty_page"; break
             if next_start is None: stop_reason = "provider_exhausted"; break
             if counts["final_count"] == previous: stop_reason = "no_unique_progress"; break
@@ -216,7 +238,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Cache-first search or explicit 50-URL collection")
     parser.add_argument("query")
     parser.add_argument("--engine", choices=["google", "bing"], default="google")
-    parser.add_argument("--max-pages", type=int, help="total collection budget, 1–20; default from COLLECTION_MAX_PAGES")
+    parser.add_argument("--max-pages", type=int, help="total collection budget, 1–50; default from COLLECTION_MAX_PAGES")
     parser.add_argument("--collect-50", action="store_true")
     parser.add_argument("--refresh", action="store_true", help="deliberately bypass saved-result reuse")
     parser.add_argument("--resume-run", type=int, help="Collect More: append to this exact-query/provider run")

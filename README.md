@@ -1,5 +1,11 @@
 # MY_CUSTOM_BOT
 
+Current: **Milestone 09** — polished UI, 1–50 Web pages, and implemented Gemini
+research → sources → separate summary → Markdown/PDF export. AI is mock/integration
+verified; live account/model verification is pending. Google remains the only GUI
+Web engine. See [current workflow](#milestone-09--current-interface-and-ai-workflow)
+and [Gemini guide](docs/AI_SEARCH.md). Earlier milestone sections are an audit trail.
+
 CCNY DSE I2400 Advanced Web Scraping. Default research topic:
 `childhood cancer early diagnosis methods` (Group B). Other valid original queries
 remain supported; the app never injects assignment prefixes or fabricates results.
@@ -355,3 +361,54 @@ sections above describe historical UI labels and defaults superseded here.
 Milestone 08 verification: **200 automated tests passed**, plus browser checks of
 real saved run 12, evidence links, mobile, Library/filter/pagination, mocked 50-card
 search and AI outputs, and declined credit confirmation. No external provider calls.
+
+## Milestone 09 — current interface and AI workflow
+
+The composer now uses normal flex flow with separated toggle, textarea and controls.
+Focus/resizing, narrow screens and enlarged reflow have been checked. The footer
+sits at the viewport bottom on short pages and follows long results. Sidebar rows
+provide New search, Library and History; recent history reloads when opened and
+following completed searches. Footer Help/README labels are noninteractive text.
+
+Web Pages now accepts **1–50**, default 1, as a maximum **page count**, not result
+count. Normal multi-page searches stop at the maximum, exhaustion, no unique progress
+or error; explicit Collect 50 additionally stops at its existing conservative target.
+Eligible saved scope is reused, or saved pages are extended without refetching them.
+Unknown historical page provenance cannot safely support automatic append. Refresh
+remains deliberate; one server-enforced confirmation authorizes the bounded maximum.
+No automatic/background prefetch or engine substitution occurs.
+
+Google is still the only functional GUI Web provider. The
+[official ScraperAPI structured endpoint index](https://docs.scraperapi.com/structured-data-endpoints)
+lists Google search, but no documented structured Bing/Yahoo/DuckDuckGo adapter was
+found. No paid capability probes were made. Those GUI integrations remain unavailable;
+Bing's existing direct CLI is preserved. Google uses the existing `/v1` implementation,
+not a changed engine argument or rewritten endpoint. No new direct scraping path.
+
+**AI / Gemini** now implements deterministic grounded research, saved sources, a
+separate Summarize action, and server-generated Markdown/PDF downloads. Exact-query
+research and per-response summary caches avoid repeat calls. Each uncached action
+requires explicit confirmation; named MySQL locks prevent duplicate in-flight work.
+Only actual grounding metadata supplies sources. Missing grounding is shown honestly.
+Reopen through History/Library without external execution.
+
+See [Gemini setup, limits, implementation and controlled live test](docs/AI_SEARCH.md).
+No live Gemini or paid ScraperAPI calls were made in this milestone: AI execution is
+verified with mocks and temporary MySQL tables, not yet against this account/model.
+The existing local model `gemini-2.5-flash` was preserved; its documented deprecation
+requires review before live testing. The app never automatically switches models.
+
+Install updated requirements (`google-genai`, ReportLab), inspect columns and apply
+`sql/milestone09.sql` once. It preserves existing data, adds nullable AI metadata and
+summary provenance, and creates one related `ai_sources` table. Existing Web/schema,
+capture/OCR paths and observations remain. No fixture research rows were persisted.
+
+Verification commands are in docs/AI_SEARCH.md. Remaining assignment gaps: no live
+Gemini/summary quality verification; no verified 50 distinct publisher destinations;
+no successful authentic Google screenshot/OCR; no additional verified GUI engines.
+Earlier milestone notes describe historical limits/UI states superseded here.
+
+Milestone 09 validation: **235 tests passed**, plus layout/Web/AI browser checks and
+an isolated real-MySQL round-trip with mocked generations. All five fixture PDF
+pages were visually reviewed. Two dependency deprecation warnings remain. No paid
+Web or Gemini calls occurred, and permanent research data stayed unchanged.

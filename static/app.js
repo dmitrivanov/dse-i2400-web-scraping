@@ -110,9 +110,9 @@ async function loadHistory(initial = false) {
       const dateLabel = Number.isNaN(date.getTime()) ? 'Saved search' : date.toLocaleDateString();
       let metadata = run.collection_metadata;
       if (typeof metadata === 'string') { try { metadata = JSON.parse(metadata); } catch { metadata = null; } }
-      const modeLabel = metadata?.mode === 'collect' ? 'Collect 50' : 'Search';
+      const modeLabel = run.search_type === 'ai' ? 'AI · Gemini' : metadata?.mode === 'collect' ? 'Collect 50' : 'Search';
       button.append(node('strong', run.query_text), node('small', `${modeLabel} · ${dateLabel} · ${run.final_count} results`));
-      button.addEventListener('click', () => openRun(run.id)); list.append(button);
+      button.addEventListener('click', () => run.search_type === 'ai' ? openAIRun(run.id) : openRun(run.id)); list.append(button);
     }
     if (initial && rows.length) await openRun(rows[0].id);
   } catch (error) { byId('history-status').textContent = error.message; }
@@ -128,17 +128,18 @@ function updateActions() {
 }
 function setBusy(value) {
   busy = value; byId('loading').hidden = !value;
-  for (const id of ['query', 'engine', 'mode', 'search-button', 'refresh-history', 'refresh-search', 'internet-mode', 'ai-mode', 'collect50', 'open-library', 'sidebar-library']) byId(id).disabled = value;
+  for (const id of ['query', 'engine', 'mode', 'search-button', 'refresh-search', 'internet-mode', 'ai-mode', 'collect50', 'open-library', 'sidebar-library', 'ai-search-button', 'ai-engine', 'summarize-ai']) byId(id).disabled = value;
   document.querySelectorAll('.history-item').forEach(item => item.disabled = value);
   updateActions();
 }
 async function submitSearch(refresh = false, resumeRunId = null) {
-  if (busy || searchType === 'ai') return;
+  if (busy) return;
+  if (searchType === 'ai') { await submitAI(); return; }
   if (!byId('query').value.trim()) { message('Enter a research query.'); return; }
-  const mode = resumeRunId || Number(byId('max-pages').value) > 1 ? 'collect' : byId('mode').value;
+  const mode = resumeRunId ? 'collect' : byId('mode').value;
   if (resumeRunId) byId('mode').value = 'collect';
-  const pages = mode === 'collect' ? Number(byId('max-pages').value) : 1;
-  if (!Number.isInteger(pages) || pages < 1 || pages > 20) { message('Choose a page limit from 1 to 20.'); return; }
+  const pages = Number(byId('max-pages').value);
+  if (!Number.isInteger(pages) || pages < 1 || pages > 50) { message('Choose a page limit from 1 to 50.'); return; }
   setBusy(true); message('');
   byId('loading-text').textContent = ' Checking saved collections; only authorized pages will be requested…';
   const baseline = Math.max(0, ...Array.from(document.querySelectorAll('.history-item')).map(item => Number(item.dataset.id)));
@@ -177,7 +178,7 @@ byId('collect-more').addEventListener('click', () => submitSearch(false, current
 byId('mode').addEventListener('change', updateActions);
 byId('query').addEventListener('input', updateActions);
 byId('all-observations').addEventListener('change', renderResults);
-byId('refresh-history').addEventListener('click', () => loadHistory());
+byId('history-nav').addEventListener('click', () => { activeNavigation('history-nav'); loadHistory(); byId('history-list').scrollIntoView({block:'nearest'}); });
 loadHistory();
 updateActions();
 
@@ -198,11 +199,12 @@ function toggleSidebar(open) {
   byId('sidebar-backdrop').hidden = !open;
   byId('toggle-history').setAttribute('aria-expanded', String(open));
   document.body.classList.toggle('sidebar-open', open);
-  if (open) byId('close-history').focus();
+  if (open) { loadHistory(); byId('close-history').focus(); }
   else byId('toggle-history').focus();
 }
 function setSearchType(type) {
   searchType = type;
+  activeNavigation(current || (typeof activeAI !== 'undefined' && activeAI) ? 'history-nav' : 'new-search');
   byId('library').hidden = true;
   byId('search-form').closest('section').hidden = false;
   const ai = type === 'ai';
@@ -225,7 +227,7 @@ byId('close-history').addEventListener('click', () => toggleSidebar(false));
 byId('sidebar-backdrop').addEventListener('click', () => toggleSidebar(false));
 document.addEventListener('keydown', event => { if (event.key === 'Escape' && !byId('sidebar').hidden) toggleSidebar(false); });
 byId('new-search').addEventListener('click', () => {
-  current = null; setSearchType('internet'); document.body.classList.remove('has-results');
+  current = null; resetAI(); setSearchType('internet'); document.body.classList.remove('has-results');
   byId('query').value = ''; byId('mode').value = 'search'; updateActions(); toggleSidebar(false); byId('query').focus();
 });
 
@@ -240,6 +242,7 @@ document.addEventListener('keydown', event => {
 let libraryPage = 1;
 async function loadLibrary() {
   if (busy) return;
+  activeNavigation('sidebar-library');
   byId('library').hidden = false;
   byId('search-form').closest('section').hidden = true;
   byId('internet-results').hidden = true;
@@ -259,11 +262,12 @@ async function loadLibrary() {
         if (item.kind === 'run' && item.search_type !== 'ai') { await openRun(item.id); return; }
         try {
           const output = await api(`/api/library/${item.kind}/${item.id}`);
+          if (output.responses?.[0]?.prompt_version) { await openAI(output.responses[0].id); return; }
           const area = byId('saved-ai'); area.replaceChildren(node('h2', item.query_text));
           for (const response of output.responses) {
             const details = node('details'); details.append(node('summary', `${response.provider} · ${response.model_name || 'Model not recorded'}`), node('pre', response.response_text)); area.append(details);
           }
-          for (const summary of output.summaries) area.append(node('h3', 'Saved summary'), node('pre', summary.summary_text));
+          for (const summary of output.summaries) { area.append(node('h3', 'Saved summary'), node('pre', summary.summary_text)); appendDownloads(area, summary.id); }
           if (!output.responses.length && !output.summaries.length) area.append(node('p', 'No saved AI output for this run.'));
         } catch (error) { byId('library-status').textContent = error.message; }
       });
@@ -275,10 +279,15 @@ async function loadLibrary() {
     byId('library-next').disabled = !data.has_more;
   } catch (error) { byId('library-status').textContent = error.message; }
 }
-for (const id of ['open-library', 'sidebar-library']) byId(id).addEventListener('click', () => { toggleSidebar(false); libraryPage = 1; loadLibrary(); });
+for (const id of ['open-library', 'sidebar-library', 'ai-search-button', 'ai-engine', 'summarize-ai']) byId(id).addEventListener('click', () => { toggleSidebar(false); libraryPage = 1; loadLibrary(); });
 byId('close-library').addEventListener('click', () => setSearchType(searchType));
 byId('library-filter').addEventListener('change', () => { libraryPage = 1; loadLibrary(); });
 byId('library-prev').addEventListener('click', () => { libraryPage--; loadLibrary(); });
 byId('library-next').addEventListener('click', () => { libraryPage++; loadLibrary(); });
 byId('collect50').addEventListener('click', () => { byId('mode').value = 'collect'; submitSearch(); });
 byId('max-pages').addEventListener('change', () => { byId('mode').value = 'search'; updateActions(); });
+
+function activeNavigation(id) {
+  document.querySelectorAll('.sidebar-nav button').forEach(button => button.removeAttribute('aria-current'));
+  byId(id).setAttribute('aria-current', 'page');
+}

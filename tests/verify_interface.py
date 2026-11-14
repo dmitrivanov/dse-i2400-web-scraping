@@ -34,7 +34,7 @@ with sync_playwright() as playwright:
     page.screenshot(path='artifacts/milestone08_desktop.png', full_page=True)
     page.locator('#toggle-history').click()
     page.locator('.history-item[data-id="3"]').click()
-    page.locator('.details summary').click()
+    page.locator('#internet-results .details summary').click()
     page.wait_for_selector('#artifact-links a')
     links = page.locator('#artifact-links a').evaluate_all('(links) => links.map(a => a.href)')
     assert len(links) == 2
@@ -62,7 +62,7 @@ with sync_playwright() as playwright:
     page.locator('#search-button').click()
     page.wait_for_function("document.querySelector('#loading').hidden")
     assert bodies[-1]['query'] == exact
-    assert bodies[-1]['mode'] == 'collect' and bodies[-1]['max_pages'] == 5
+    assert bodies[-1]['mode'] == 'search' and bodies[-1]['max_pages'] == 5
     assert bodies[-1]['allow_paid'] is False
     page.unroute('**/api/search')
     page.route('**/api/search', lambda route: route.fulfill(status=422, json={'detail': [{'msg':'Use at least five meaningful words'}]}))

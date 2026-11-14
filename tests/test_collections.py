@@ -177,14 +177,42 @@ def test_mysql_boolean_flags_and_ads_are_not_final():
     assert clean_results(rows,preserve_urls=True)[1]['final_count']==1
 
 
-@pytest.mark.parametrize('budget',[0,21,True,'10'])
+@pytest.mark.parametrize('budget',[0,51,True,'10'])
 def test_invalid_budgets_before_requests(budget):
     with pytest.raises(ValueError):run_search.run_search(QUERY,mode='collect',max_pages=budget, allow_paid=True)
 
 
-def test_normal_search_cannot_implicitly_collect():
-    with pytest.raises(ValueError,match='Normal search'):
-        run_search.run_search(QUERY,max_pages=10, allow_paid=True)
+def test_normal_multiple_pages_still_needs_authorization(workflow):
+    with pytest.raises(run_search.PaidRequestRequired):
+        run_search.run_search(QUERY,max_pages=10, allow_paid=False)
+    db.insert_search_run.assert_not_called()
+
+
+def test_page_scope_appends_saved_pages(workflow, monkeypatch):
+    saved = collection()
+    saved['run']['collection_metadata'] = {'pages': 1, 'next_start': 10}
+    monkeypatch.setattr(run_search, 'find_saved_collection', lambda *args: saved)
+    fetch = MagicMock(side_effect=lambda query,start=0: {'organic_results':[{'link': f'https://example.org/new{start}'}]})
+    monkeypatch.setattr(google_search, 'fetch_results', fetch)
+    summary = run_search.run_search(QUERY, max_pages=3, allow_paid=True)
+    assert summary['run_id'] == 12 and summary['pages'] == 3
+    assert [call.kwargs['start'] for call in fetch.call_args_list] == [10,20]
+    db.insert_search_run.assert_not_called()
+
+
+def test_page_scope_reuses_sufficient_saved_pages(monkeypatch):
+    saved = collection()
+    saved['run']['collection_metadata'] = {'pages': 3, 'next_start': 30}
+    monkeypatch.setattr(run_search, 'find_saved_collection', lambda *args: saved)
+    monkeypatch.setattr(run_search, 'get_scraper_config', lambda: pytest.fail('unexpected credentials'))
+    assert run_search.run_search(QUERY, max_pages=3)['reused'] is True
+
+
+def test_normal_pages_stop_at_selected_maximum(workflow, monkeypatch):
+    fetch = MagicMock(side_effect=lambda query,start=0: {'organic_results':[{'link':f'https://example.org/{start}'}]})
+    monkeypatch.setattr(google_search, 'fetch_results', fetch)
+    summary = run_search.run_search(QUERY, max_pages=50, allow_paid=True)
+    assert summary['pages'] == 50 and fetch.call_count == 50
 
 
 def test_cache_sql_preserves_query_and_parameters(monkeypatch):
@@ -237,3 +265,25 @@ def test_page_checkpoints_persist_partial_progress_and_metadata(workflow,monkeyp
     assert metadata.call_args.args[2]['stop_reason']=='empty_page'
     assert [call.args[2] for call in workflow[2].call_args_list]==['running','running','running','completed']
     assert sum(len(call.args[2]) for call in workflow[1].call_args_list)==18
+
+
+def test_collect50_extends_known_partial_collection(workflow, monkeypatch):
+    saved=collection()
+    saved['run']['collection_metadata']={'pages':1,'next_start':10,'stop_reason':'page_budget'}
+    monkeypatch.setattr(db,'get_search_run',lambda run_id:saved)
+    monkeypatch.setattr(run_search,'find_saved_collection',lambda query,engine,provider,target:None if target==50 else saved)
+    fetch=MagicMock(side_effect=lambda query,start=0:{'organic_results':[{'link':f'https://example.org/new{start}'}]})
+    monkeypatch.setattr(google_search,'fetch_results',fetch)
+    result=run_search.run_search(QUERY,mode='collect',max_pages=3,allow_paid=True)
+    assert result['run_id']==12 and result['pages']==3
+    assert [call.kwargs['start'] for call in fetch.call_args_list]==[10,20]
+    db.insert_search_run.assert_not_called()
+
+
+def test_exhausted_partial_collection_is_reported_without_spend(monkeypatch):
+    saved=collection()
+    saved['run']['collection_metadata']={'pages':1,'next_start':None,'stop_reason':'provider_exhausted'}
+    monkeypatch.setattr(run_search,'find_saved_collection',lambda query,engine,provider,target:None if target==50 else saved)
+    monkeypatch.setattr(run_search,'get_scraper_config',lambda:pytest.fail('exhausted collection requested a key'))
+    result=run_search.run_search(QUERY,mode='collect',max_pages=50)
+    assert result['reused'] and result['final_count']==9 and not result['target_met']

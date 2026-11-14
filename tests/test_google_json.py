@@ -153,7 +153,7 @@ def test_next_page_failure_preserves_first_page(workflow, monkeypatch):
     assert workflow[2].call_args.args[2] == 'failed'
 
 
-@pytest.mark.parametrize('pages', [0, 6, True, '5'])
+@pytest.mark.parametrize('pages', [0, 51, True, '5'])
 def test_web_page_limits(pages):
     assert TestClient(app).post('/api/search', json={'query': QUERY, 'max_pages': pages}).status_code == 422
 

@@ -61,12 +61,12 @@ def library_output(kind: Literal['run', 'response', 'summary'], item_id: int):
                     cursor.execute('SELECT id FROM search_runs WHERE id=%s', (item_id,))
                     if not cursor.fetchone():
                         raise HTTPException(404, 'Saved item not found')
-                    cursor.execute('SELECT id, provider, model_name, response_text, created_at FROM ai_responses WHERE run_id=%s ORDER BY id', (item_id,))
+                    cursor.execute('SELECT id, provider, model_name, response_text, prompt_version, created_at FROM ai_responses WHERE run_id=%s ORDER BY id', (item_id,))
                     responses = cursor.fetchall()
                     cursor.execute('SELECT id, summary_text, summarizer, created_at FROM ai_summaries WHERE run_id=%s ORDER BY id', (item_id,))
                     return {'responses': responses, 'summaries': cursor.fetchall()}
                 table = 'ai_responses' if kind == 'response' else 'ai_summaries'
-                fields = 'a.provider, a.model_name, a.response_text' if kind == 'response' else 'a.summary_text, a.summarizer'
+                fields = 'a.provider, a.model_name, a.response_text, a.prompt_version' if kind == 'response' else 'a.summary_text, a.summarizer'
                 cursor.execute(f'SELECT a.id, a.created_at, q.query_text, {fields} FROM {table} a JOIN search_queries q ON q.id=a.query_id WHERE a.id=%s', (item_id,))
                 row = cursor.fetchone()
                 if not row:

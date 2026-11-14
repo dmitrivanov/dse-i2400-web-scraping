@@ -52,26 +52,32 @@ def get_scraper_config() -> dict[str, str]:
 
 
 def get_collection_page_limit() -> int:
-    """Read a default collection budget of ten pages, bounded to 1–20."""
+    """Read a default collection budget of ten pages, bounded to 1–50."""
     load_dotenv(Path(__file__).resolve().parent / ".env")
     try:
         value = int(os.getenv("COLLECTION_MAX_PAGES", "10"))
     except ValueError:
-        raise ValueError("COLLECTION_MAX_PAGES must be an integer from 1 to 20") from None
-    if not 1 <= value <= 20:
-        raise ValueError("COLLECTION_MAX_PAGES must be an integer from 1 to 20")
+        raise ValueError("COLLECTION_MAX_PAGES must be an integer from 1 to 50") from None
+    if not 1 <= value <= 50:
+        raise ValueError("COLLECTION_MAX_PAGES must be an integer from 1 to 50")
     return value
 
 
 def get_gemini_config() -> dict[str, str]:
     """Validate server-only settings locally; never contact Gemini or echo a key."""
-    import re
-
     load_dotenv(Path(__file__).resolve().parent / ".env")
     key = os.getenv("GEMINI_API_KEY", "").strip()
     if not key:
         raise ValueError("GEMINI_API_KEY is required")
-    model = os.getenv("GEMINI_MODEL", "gemini-3.5-flash-lite").strip()
-    if not re.fullmatch(r"gemini-[a-zA-Z0-9][a-zA-Z0-9._-]{0,90}", model):
-        raise ValueError("GEMINI_MODEL must be a Gemini model identifier")
+    model = get_gemini_model()
     return {"api_key": key, "model": model}
+
+
+def get_gemini_model() -> str:
+    """Read a requested model without requiring credentials for cached reads."""
+    import re
+    load_dotenv(Path(__file__).resolve().parent / ".env")
+    model = os.getenv("GEMINI_MODEL", "").strip()
+    if not re.fullmatch(r"gemini-[a-zA-Z0-9][a-zA-Z0-9._-]{0,90}", model):
+        raise ValueError("GEMINI_MODEL must be an explicitly configured Gemini model identifier")
+    return model

@@ -187,7 +187,7 @@ def test_collection_action_error_is_actionable(backend):
 
 def test_options_report_bounded_config_without_search(backend,monkeypatch):
     monkeypatch.setattr(web_search,'get_collection_page_limit',lambda:12)
-    assert client.get('/api/search-options').json()=={'collection_max_pages':12,'max_allowed_pages':20}
+    assert client.get('/api/search-options').json()=={'collection_max_pages':12,'max_allowed_pages':50}
     backend[0].assert_not_called()
 
 

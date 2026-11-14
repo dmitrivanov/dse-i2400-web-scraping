@@ -69,7 +69,7 @@ def test_collection_default_budget(monkeypatch,value,expected):
     assert config.get_collection_page_limit()==expected
 
 
-@pytest.mark.parametrize('value',['0','21','invalid'])
+@pytest.mark.parametrize('value',['0','51','invalid'])
 def test_invalid_collection_config(monkeypatch,value):
     monkeypatch.setenv('COLLECTION_MAX_PAGES',value)
     with pytest.raises(ValueError,match='COLLECTION_MAX_PAGES'):

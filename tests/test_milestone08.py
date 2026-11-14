@@ -65,7 +65,7 @@ def test_gemini_offline_configuration_never_returns_secret(monkeypatch):
     monkeypatch.setenv('GEMINI_API_KEY', 'secret-not-for-browser')
     monkeypatch.setenv('GEMINI_MODEL', 'gemini-3.5-flash-lite')
     result = validate_configuration()
-    assert result == {'provider': 'gemini', 'model': 'gemini-3.5-flash-lite', 'configured': True, 'execution_available': False}
+    assert result == {'provider': 'gemini', 'model': 'gemini-3.5-flash-lite', 'configured': True, 'execution_available': True}
     assert 'secret-not-for-browser' not in str(result)
     assert 'GEMINI_API_KEY' not in client.get('/search').text
 

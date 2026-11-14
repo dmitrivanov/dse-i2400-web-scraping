@@ -70,6 +70,11 @@ CREATE TABLE IF NOT EXISTS ai_responses (
     provider VARCHAR(50) NOT NULL,
     model_name VARCHAR(100) NULL,
     response_text LONGTEXT NOT NULL,
+    requested_model VARCHAR(100) NULL,
+    prompt_text TEXT NULL,
+    prompt_version VARCHAR(50) NULL,
+    grounding_metadata JSON NULL,
+    usage_metadata JSON NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
     INDEX idx_ai_responses_run_id (run_id),
@@ -85,9 +90,16 @@ CREATE TABLE IF NOT EXISTS ai_summaries (
     query_id BIGINT NOT NULL,
     run_id BIGINT NULL,
     summary_text LONGTEXT NOT NULL,
+    source_response_id BIGINT NULL,
+    prompt_text LONGTEXT NULL,
+    prompt_version VARCHAR(50) NULL,
+    usage_metadata JSON NULL,
     summarizer VARCHAR(100) NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (id),
+    UNIQUE KEY uq_ai_summary_response (source_response_id),
+    CONSTRAINT fk_ai_summary_response FOREIGN KEY (source_response_id)
+        REFERENCES ai_responses(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
     INDEX idx_ai_summaries_run_id (run_id),
     CONSTRAINT fk_ai_summaries_run_id FOREIGN KEY (run_id)
         REFERENCES search_runs(id) ON DELETE RESTRICT ON UPDATE RESTRICT,
@@ -96,3 +108,14 @@ CREATE TABLE IF NOT EXISTS ai_summaries (
         REFERENCES search_queries(id) ON DELETE RESTRICT ON UPDATE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 
+
+CREATE TABLE IF NOT EXISTS ai_sources (
+ id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+ response_id BIGINT NOT NULL,
+ chunk_index INT NOT NULL,
+ title TEXT NULL,
+ url TEXT NOT NULL,
+ UNIQUE KEY uq_ai_source_chunk (response_id, chunk_index),
+ CONSTRAINT fk_ai_sources_response FOREIGN KEY (response_id)
+ REFERENCES ai_responses(id) ON DELETE RESTRICT ON UPDATE RESTRICT
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;

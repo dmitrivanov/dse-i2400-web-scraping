@@ -1,6 +1,10 @@
-# Architecture after Milestone 05D
+# Architecture — Milestone 09
 
-## Milestone 06 changes (current)
+The final Milestone 09 section describes current behavior. Earlier sections document
+the preceding implementation and verification boundaries. See AI_SEARCH.md for the
+current Gemini module/API/limits and controlled live-test workflow.
+
+## Milestone 06 changes (historical)
 
 New collection metadata is authoritative in MySQL (`collection_metadata JSON`), with
 per-page transactional checkpoints and UI polling. A cache miss requires explicit
@@ -201,7 +205,7 @@ and independent capture action. tests/verify_interface.py exercises the real loc
 frontend with saved MySQL reads and intercepted search POSTs, including 50-card
 rendering. This is a browser smoke check, not new provider-result verification.
 
-## Milestone 08 (current)
+## Milestone 08 (historical)
 
 Presentation refinements preserve the existing layout. Google alone is enabled in
 Web mode; Gemini is a disabled future AI choice. Pages defaults to 1; values above
@@ -241,3 +245,47 @@ with deprecation documented in README. Grounding and model access are not live-t
 The future flow is original query → research prompt → grounded Gemini response with
 actual metadata sources → stored run-linked output → explicit Summarize → stored
 summary/provenance. Provider prose alone cannot establish a citation URL.
+
+## Milestone 09 (current)
+
+Phase A retains the visual system but fixes composer flow, sticky footer and sidebar
+navigation. Phase B expands Web page validation to 1–50 and distinguishes page scope
+from Collect 50's result target. Sufficient completed scope is reused; eligible
+insufficient saved pages append through the shared ETL without refetch. Unknown page
+provenance is not invented. Provider registry remains Google GUI / legacy Bing CLI:
+no supported structured Bing/Yahoo/DDG endpoint was established in official docs,
+and no paid probe was authorized. No fallback, direct scraper or extra provider SDK.
+
+Phase C adds the official Google Gen AI SDK and ReportLab. The flow is:
+original query → deterministic stored research prompt → authorized Gemini generation
+with Google Search tool → actual text/model/grounding/usage extraction → atomic
+response/source/run completion → explicit cached-or-authorized summary → saved
+summary/source-response provenance → read-only Markdown/PDF export.
+
+Responsibilities: gemini_provider.py (SDK boundary/prompts/extraction), ai_store.py
+(explicit SQL, cache, transactions and MySQL named locks), ai_routes.py (validation,
+authorization and saved APIs), summary_export.py (saved-document export), static/ai.js
+(safe DOM Markdown subset, source list, summary/download UI). Existing Web ETL and
+capture/OCR remain separate and intact. Model metadata is checked on authorized
+execution, never silently substituted. Request timeout60s, attempts1, output caps and
+input limits are documented in AI_SEARCH.md. No development live generation occurred.
+
+The additive09 migration adds AI prompt/requested-model/grounding/usage metadata;
+summary source_response_id/prompt/version/usage with a nullable unique FK; one
+ai_sources table stores response FK, original chunk index, title and returned URI.
+Grounding supports preserve citation associations in JSON. Search runs identify AI
+and Gemini; actual model_name comes from response model_version, not the request.
+Unknown historical provenance remains null. Output/source/status commit together;
+safe failed status is retained on errors. Summary queries use the exact saved response;
+cache hits precede credentials or model execution. Named locks span authorization,
+cache lookup and execution, preventing duplicate requests across processes. No table
+or historical row was dropped. Temporary-table integration fixtures do not affect
+permanent research data.
+
+Research POST /api/ai/search and POST /api/ai/responses/{id}/summarize require a literal
+allow_paid boolean after a cache miss. GET response/source views, Library, suggestions
+and summary exports are read-only. Export uses the saved summary and real source
+records; it cannot generate another answer. Google Suggestions render in a script-free
+sandboxed iframe. Model Markdown never executes HTML; only known grounding URLs get
+clickable inline links. These sources are provider observations, not independent
+publisher verification. See docs/AI_SEARCH.md for live-test boundaries and limitations.
